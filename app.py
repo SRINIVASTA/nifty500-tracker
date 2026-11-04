@@ -33,12 +33,12 @@ with col_d1:
 with col_d2:
     end_date = st.date_input("End Date", datetime.today())
 
-# Price Ingestion Filter Panel (Moved to Sidebar under Dates)
+# Price Ingestion Filter Panel
 col_p1, col_p2 = st.sidebar.columns(2)
 with col_p1:
-    price_from = st.number_input("Price From (₹)", min_value=0.0, value=0.0, step=50.0)
+    price_from = st.number_input("Price From (₹)", min_value=0.0, value=100.0, step=50.0)
 with col_p2:
-    price_to = st.number_input("Price To (₹)", min_value=0.0, value=100000.0, step=50.0)
+    price_to = st.number_input("Price To (₹)", min_value=0.0, value=1000.0, step=50.0)
 
 fetch_trigger = st.sidebar.button("Execute Live Ingestion", type="primary", use_container_width=True)
 
@@ -66,50 +66,68 @@ email_trigger = st.sidebar.button("Dispatch PDF Report", use_container_width=Tru
 if fetch_trigger:
     with st.spinner("Fetching live pricing data from market feeds & evaluating delta trends..."):
         try:
-            # Fetch and process pipeline parameters
+            # 1. Fetch data from engine
             master_list = engine.fetch_master_list()
             processed_df = engine.process_daily_performance(master_list)
             
-            st.session_state.market_data = processed_df
-            st.success(f"Live Ingestion Completed! Active coverage: {len(processed_df)} / 500 securities.")
+            # 2. Harmonize price metrics before sorting/filtering
+            if "Price Change (+/-)" not in processed_df.columns and "Price Change" in processed_df.columns:
+                processed_df["Price Change (+/-)"] = processed_df["Price Change"]
+            elif "Price Change (+/-)" not in processed_df.columns and "% Change" in processed_df.columns:
+                processed_df["Price Change (+/-)"] = processed_df["% Change"]
             
-            NiftyPDFGenerator.generate(processed_df, st.session_state.last_generated_pdf)
+            if "Latest closing price (₹)" not in processed_df.columns and "Current Close" in processed_df.columns:
+                processed_df["Latest closing price (₹)"] = processed_df["Current Close"]
+            elif "Latest closing price (₹)" not in processed_df.columns and "Close" in processed_df.columns:
+                processed_df["Latest closing price (₹)"] = processed_df["Close"]
+
+            # 3. Apply operational UI Filters (Price & Date)
+            if "Latest closing price (₹)" in processed_df.columns:
+                processed_df = processed_df[
+                    (processed_df["Latest closing price (₹)"] >= price_from) & 
+                    (processed_df["Latest closing price (₹)"] <= price_to)
+                ]
+            
+            if "Date" in processed_df.columns:
+                processed_df["Date"] = pd.to_datetime(processed_df["Date"]).dt.date
+                processed_df = processed_df[
+                    (processed_df["Date"] >= start_date) & 
+                    (processed_df["Date"] <= end_date)
+                ]
+
+            st.session_state.market_data = processed_df
+            st.success(f"Live Ingestion Completed! Active coverage: {len(processed_df)} securities matching constraints.")
+            
+            # 4. Generate PDF compiling ONLY the requested columns
+            pdf_cols = ["NSE Ticker Symbol", "Company Name", "Latest closing price (₹)", "Direction", "Price Change (+/-)"]
+            available_pdf_cols = [c for c in pdf_cols if c in processed_df.columns]
+            
+            pdf_export_df = processed_df[available_pdf_cols]
+            NiftyPDFGenerator.generate(pdf_export_df, st.session_state.last_generated_pdf)
+            
         except Exception as error:
             st.error(f"Pipeline Execution Aborted: {str(error)}")
-
 # --- VISUAL CONTROL DESK: MASTER WORKSPACE ENTRY ---
 if st.session_state.market_data is not None:
-    df = st.session_state.market_data
+    filtered_df = st.session_state.market_data
     is_live_feed = True
 else:
     try:
-        df = engine.fetch_master_list()
+        filtered_df = engine.fetch_master_list()
         is_live_feed = False
     except Exception as initialization_error:
         st.error(f"Failed to pre-populate index ledger: {str(initialization_error)}")
-        df = pd.DataFrame()
+        filtered_df = pd.DataFrame()
         is_live_feed = False
 
 # Render the Desktop View Grid if data layout is verified
-if not df.empty:
-    # Ensure structural metric transformation maps strictly to price change units
-    if "Price Change (+/-)" not in df.columns and "Price Change" in df.columns:
-        df["Price Change (+/-)"] = df["Price Change"]
-    elif "Price Change (+/-)" not in df.columns and "% Change" in df.columns:
-        df["Price Change (+/-)"] = df["% Change"]
-        
-    # Apply Sidebar Price Filter directly to the functional master frame
-    filtered_df = df.copy()
-    if is_live_feed and "Current Close" in filtered_df.columns:
-        filtered_df = filtered_df[
-            (filtered_df["Current Close"] >= price_from) & 
-            (filtered_df["Current Close"] <= price_to)
-        ]
-
+if not filtered_df.empty:
     if is_live_feed:
         up_scrip = int((filtered_df["Direction"] == "Up").sum())
         down_scrip = int((filtered_df["Direction"] == "Down").sum())
-        avg_shift = float(filtered_df["Price Change (+/-)"].mean()) if not filtered_df.empty else 0.0
+        
+        target_delta_col = "Price Change (+/-)" if "Price Change (+/-)" in filtered_df.columns else "Price Change"
+        avg_shift = float(filtered_df[target_delta_col].mean()) if target_delta_col in filtered_df.columns and not filtered_df.empty else 0.0
         
         kpi1, kpi2, kpi3 = st.columns(3)
         kpi1.metric(label="Advancing Markets (🟢)", value=up_scrip)
@@ -134,7 +152,7 @@ if not df.empty:
         if is_live_feed:
             formatted_df = filtered_df.copy()
             for col in formatted_df.columns:
-                if "Close" in col or "Price Change" in col:
+                if "Close" in col or "price" in col.lower() or "Price Change" in col:
                     try:
                         formatted_df[col] = formatted_df[col].apply(lambda x: f"₹{x:,.2f}" if isinstance(x, (int, float)) else x)
                     except Exception:
@@ -172,9 +190,10 @@ if not df.empty:
                     
                 with col_vis2:
                     st.subheader("Top Performers (Extreme Ends)")
-                    sorted_df = filtered_df.sort_values(by="Price Change (+/-)")
+                    target_sort = "Price Change (+/-)" if "Price Change (+/-)" in filtered_df.columns else filtered_df.columns[-1]
+                    sorted_df = filtered_df.sort_values(by=target_sort)
                     top_performers = pd.concat([sorted_df.head(5), sorted_df.tail(5)]).drop_duplicates()
-                    fig_bar = px.bar(top_performers, x="Price Change (+/-)", y="NSE Ticker Symbol", orientation="h",
+                    fig_bar = px.bar(top_performers, x=target_sort, y="NSE Ticker Symbol", orientation="h",
                                      color="Direction", color_discrete_map={"Up": "#00875A", "Down": "#DE350B"})
                     st.plotly_chart(fig_bar, use_container_width=True)
             else:
