@@ -50,7 +50,7 @@ graph TD
     J & L -->|Step 4: Silent Dispatch| M[Dispatch PDF Report Button]
     M -->|Extract Context via TOML Secrets| N{st.secrets gmail}
     N -->|Route Secure TLS Packet| O(src/email_service.py)
-    O -->|Target Server: smtp.gmail.com| P[hisrinivas1972@gmail.com]
+    O -->|Target Server: smtp.gmail.com| P["hisrinivas1972@gmail.com"]
 
     %% Class Styling for Clean UI Nodes
     style E fill:#e1f5fe,stroke:#03a9f4,stroke-width:2px;
@@ -73,7 +73,7 @@ Create a local folder named `.streamlit` and save your private relay endpoints i
 [gmail]
 username = "your-automated-system@gmail.com"
 app_password = "xxxx xxxx xxxx xxxx" # 16-digit Google App Password
-to_email = "**************@gmail.com"
+to_email = "***********@gmail.com"
 ```
 
 ### 2. Boot Up the Streamlit Core Server
@@ -83,7 +83,7 @@ Run the platform using the explicit network flag to map the interface directly t
 streamlit run app.py --server.port 8056 --server.address localhost
 ```
 
-Once executed, open your desktop browser and navigate to the corrected port address:
+Once executed, open your desktop browser and navigate to the live deployment link:
 🔗 **`http://localhost:8056`**
 
 ---
