@@ -11,6 +11,9 @@ st.set_page_config(
     page_title="Nifty 500 Terminal", page_icon="📊", layout="wide"
 )
 
+# Instantiate the engine to handle data state transitions
+engine = NiftyDataEngine()
+
 if "market_data" not in st.session_state:
     st.session_state.market_data = None
 if "last_generated_pdf" not in st.session_state:
@@ -26,11 +29,9 @@ fetch_trigger = st.sidebar.button("Execute Live Ingestion", type="primary", use_
 st.sidebar.markdown("---")
 st.sidebar.header("📧 Document Delivery Terminal")
 
-# Fetch credentials and default recipients from secure secrets mapping context seamlessly
 try:
     email_sender = st.secrets["gmail"]["username"]
     app_password = st.secrets["gmail"]["app_password"]
-    # Fallback to empty string if no default list is provided in toml
     default_recipients = st.secrets["gmail"].get("to_email", "")
     secrets_loaded = True
 except KeyError:
@@ -39,7 +40,6 @@ except KeyError:
     default_recipients = ""
     secrets_loaded = False
 
-# Inputs for handling bulk reporting distribution runs (pre-filled from TOML)
 recipient_input = st.sidebar.text_input('To (Separate multiple with commas)', value=default_recipients, placeholder="exec1@firm.com, exec2@firm.com")
 custom_subject = st.sidebar.text_input('Subject', value="Automated Executive Briefing: Nifty 500 Market Matrix")
 custom_body = st.sidebar.text_area('Email Body Message', value="Team,\n\nPlease find attached the structured tracking ledger mapping the latest index deltas.")
@@ -51,31 +51,46 @@ email_trigger = st.sidebar.button("Dispatch PDF Report", use_container_width=Tru
 
 # --- INGESTION CONTROLLER ENGINE ---
 if fetch_trigger:
-    with st.spinner("Fetching data from NSE servers & evaluating histories..."):
+    with st.spinner("Fetching live pricing data from market feeds & evaluating delta trends..."):
         try:
-            engine = NiftyDataEngine()
             master_list = engine.fetch_master_list()
             processed_df = engine.process_daily_performance(master_list)
             
             st.session_state.market_data = processed_df
-            st.success(f"Ingestion completed! Active coverage: {len(processed_df)} / 500 securities.")
+            st.success(f"Live Ingestion Completed! Active coverage: {len(processed_df)} / 500 securities.")
             
             NiftyPDFGenerator.generate(processed_df, st.session_state.last_generated_pdf)
         except Exception as error:
             st.error(f"Pipeline Execution Aborted: {str(error)}")
 
-# --- METRICS & VISUALIZATIONS SUBSYSTEM ---
+# --- VISUAL CONTROL DESK: BASELINE DATA LOAD PHASE ---
+# Check if live ingested data exists; if not, immediately serve the base 500 index matrix 
 if st.session_state.market_data is not None:
     df = st.session_state.market_data
-    
-    up_scrip = int((df["Direction"] == "Up").sum())
-    down_scrip = int((df["Direction"] == "Down").sum())
-    avg_shift = float(df["% Change"].mean())
-    
-    kpi1, kpi2, kpi3 = st.columns(3)
-    kpi1.metric(label="Advancing Markets (🟢)", value=up_scrip)
-    kpi2.metric(label="Declining Markets (🔴)", value=down_scrip)
-    kpi3.metric(label="Index Delta Mean", value=f"{avg_shift:+.2f}%")
+    is_live_feed = True
+else:
+    try:
+        # Pre-load the constituent pool so the user can verify scrips before processing starts
+        df = engine.fetch_master_list()
+        is_live_feed = False
+    except Exception as initialization_error:
+        st.error(f"Failed to pre-populate index ledger: {str(initialization_error)}")
+        df = pd.DataFrame()
+        is_live_feed = False
+
+# Render the Desktop View Grid if data layout is verified
+if not df.empty:
+    if is_live_feed:
+        up_scrip = int((df["Direction"] == "Up").sum())
+        down_scrip = int((df["Direction"] == "Down").sum())
+        avg_shift = float(df["% Change"].mean())
+        
+        kpi1, kpi2, kpi3 = st.columns(3)
+        kpi1.metric(label="Advancing Markets (🟢)", value=up_scrip)
+        kpi2.metric(label="Declining Markets (🔴)", value=down_scrip)
+        kpi3.metric(label="Index Delta Mean", value=f"{avg_shift:+.2f}%")
+    else:
+        st.warning("⚠️ Hub Pipeline Standby: Displaying structural index tracking registry. Live metrics will map below after running execution pipeline.")
     
     tab_grid, tab_analytics = st.tabs(["📋 Master Ledger Workspace", "📈 Cross-Sectional Analytics"])
     
@@ -83,21 +98,28 @@ if st.session_state.market_data is not None:
         search_query = st.text_input("Filter Ledger (Symbol / Company Name)")
         filtered_df = df
         if search_query:
-            filtered_df = df[
-                df["NSE Ticker Symbol"].str.contains(search_query, case=False) | 
-                df["Company Name"].str.contains(search_query, case=False)
-            ]
+            # Handle standard column lookups based on state context
+            symbol_col = "NSE Ticker Symbol" if is_live_feed else "Symbol"
+            if symbol_col in df.columns and "Company Name" in df.columns:
+                filtered_df = df[
+                    df[symbol_col].str.contains(search_query, case=False) | 
+                    df["Company Name"].str.contains(search_query, case=False)
+                ]
             
-        st.dataframe(
-            filtered_df.style.map(
-                lambda val: "color: #00875A;" if val == "Up" else ("color: #DE350B;" if val == "Down" else ""),
-                subset=["Direction"]
-            ),
-            use_container_width=True,
-            height=450
-        )
+        if is_live_feed:
+            st.dataframe(
+                filtered_df.style.map(
+                    lambda val: "color: #00875A; font-weight: bold;" if val == "Up" else ("color: #DE350B; font-weight: bold;" if val == "Down" else ""),
+                    subset=["Direction"]
+                ),
+                use_container_width=True,
+                height=500
+            )
+        else:
+            # Baseline interactive workspace view
+            st.dataframe(filtered_df, use_container_width=True, height=500)
         
-        if os.path.exists(st.session_state.last_generated_pdf):
+        if is_live_feed and os.path.exists(st.session_state.last_generated_pdf):
             with open(st.session_state.last_generated_pdf, "rb") as file_bytes:
                 st.download_button(
                     label="📥 Download Executable PDF Ledger",
@@ -107,22 +129,25 @@ if st.session_state.market_data is not None:
                 )
                 
     with tab_analytics:
-        col_vis1, col_vis2 = st.columns(2)
-        with col_vis1:
-            st.subheader("Market Breadth Allocation")
-            fig_pie = px.pie(df, names="Direction", color="Direction", 
-                             color_discrete_map={"Up": "#00875A", "Down": "#DE350B"}, hole=0.4)
-            st.plotly_chart(fig_pie, use_container_width=True)
-            
-        with col_vis2:
-            st.subheader("Top Performers (Extreme Ends)")
-            sorted_df = df.sort_values(by="% Change")
-            top_performers = pd.concat([sorted_df.head(5), sorted_df.tail(5)])
-            fig_bar = px.bar(top_performers, x="% Change", y="NSE Ticker Symbol", orientation="h",
-                             color="Direction", color_discrete_map={"Up": "#00875A", "Down": "#DE350B"})
-            st.plotly_chart(fig_bar, use_container_width=True)
+        if is_live_feed:
+            col_vis1, col_vis2 = st.columns(2)
+            with col_vis1:
+                st.subheader("Market Breadth Allocation")
+                fig_pie = px.pie(df, names="Direction", color="Direction", 
+                                 color_discrete_map={"Up": "#00875A", "Down": "#DE350B"}, hole=0.4)
+                st.plotly_chart(fig_pie, use_container_width=True)
+                
+            with col_vis2:
+                st.subheader("Top Performers (Extreme Ends)")
+                sorted_df = df.sort_values(by="% Change")
+                top_performers = pd.concat([sorted_df.head(5), sorted_df.tail(5)])
+                fig_bar = px.bar(top_performers, x="% Change", y="NSE Ticker Symbol", orientation="h",
+                                 color="Direction", color_discrete_map={"Up": "#00875A", "Down": "#DE350B"})
+                st.plotly_chart(fig_bar, use_container_width=True)
+        else:
+            st.info("📈 Analytics Engine Offline. Cross-sectional charts will plot here once market streaming data finishes processing.")
 else:
-    st.info("💡 Hub Pipeline Offline. Click 'Execute Live Ingestion' in the sidebar panel to synchronize market state data.")
+    st.info("💡 Ingestion Hub Data Structure Empty. Please click 'Execute Live Ingestion' to build market state parameters manually.")
 
 # --- SECURE EMAIL DISPATCH SYSTEM ---
 if email_trigger:
