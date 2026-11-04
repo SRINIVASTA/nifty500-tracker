@@ -19,21 +19,37 @@ if "last_generated_pdf" not in st.session_state:
 st.title("📊 Nifty 500 Market Performance Enterprise Workspace")
 st.markdown("Automated ingestion pipeline mapping tracking deltas with interactive cross-sectional analysis dashboards.")
 
+# --- SIDEBAR RUNTIME PANEL ---
 st.sidebar.header("⚙️ Pipeline Execution Control")
 fetch_trigger = st.sidebar.button("Execute Live Ingestion", type="primary", use_container_width=True)
 
 st.sidebar.markdown("---")
 st.sidebar.header("📧 Document Delivery Terminal")
-recipient = st.sidebar.text_input("Target Email Address", placeholder="exec@firm.com")
 
-with st.sidebar.expander("🔐 SMTP Relay Security Settings"):
-    smtp_host = st.text_input("SMTP Host", value="://gmail.com")
-    smtp_port = st.number_input("SMTP Port", value=587)
-    auth_email = st.text_input("Auth User Email", placeholder="pipeline@firm.com")
-    auth_pass = st.text_input("App Password", type="password")
+# Fetch credentials and default recipients from secure secrets mapping context seamlessly
+try:
+    email_sender = st.secrets["gmail"]["username"]
+    app_password = st.secrets["gmail"]["app_password"]
+    # Fallback to empty string if no default list is provided in toml
+    default_recipients = st.secrets["gmail"].get("to_email", "")
+    secrets_loaded = True
+except KeyError:
+    email_sender = ""
+    app_password = ""
+    default_recipients = ""
+    secrets_loaded = False
 
-email_trigger = st.sidebar.button("Dispatch PDF Report", use_container_width=True)
+# Inputs for handling bulk reporting distribution runs (pre-filled from TOML)
+recipient_input = st.sidebar.text_input('To (Separate multiple with commas)', value=default_recipients, placeholder="exec1@firm.com, exec2@firm.com")
+custom_subject = st.sidebar.text_input('Subject', value="Automated Executive Briefing: Nifty 500 Market Matrix")
+custom_body = st.sidebar.text_area('Email Body Message', value="Team,\n\nPlease find attached the structured tracking ledger mapping the latest index deltas.")
 
+if not secrets_loaded:
+    st.sidebar.error("⚠️ Credentials missing! Configure [gmail] entries in Streamlit Secrets.")
+
+email_trigger = st.sidebar.button("Dispatch PDF Report", use_container_width=True, disabled=not secrets_loaded)
+
+# --- INGESTION CONTROLLER ENGINE ---
 if fetch_trigger:
     with st.spinner("Fetching data from NSE servers & evaluating histories..."):
         try:
@@ -48,6 +64,7 @@ if fetch_trigger:
         except Exception as error:
             st.error(f"Pipeline Execution Aborted: {str(error)}")
 
+# --- METRICS & VISUALIZATIONS SUBSYSTEM ---
 if st.session_state.market_data is not None:
     df = st.session_state.market_data
     
@@ -107,22 +124,23 @@ if st.session_state.market_data is not None:
 else:
     st.info("💡 Hub Pipeline Offline. Click 'Execute Live Ingestion' in the sidebar panel to synchronize market state data.")
 
+# --- SECURE EMAIL DISPATCH SYSTEM ---
 if email_trigger:
     if st.session_state.market_data is None:
-        st.sidebar.error("Data missing! Extract active parameters first.")
-    elif not recipient or not auth_email or not auth_pass:
-        st.sidebar.error("Required Cryptographic Authentication details missing!")
+        st.sidebar.error("❌ Data missing! Execute live ingestion first to compile the report data.")
+    elif not recipient_input:
+        st.sidebar.error("❌ Please enter at least one recipient email address.")
     else:
-        with st.spinner("Establishing secure TLS connection, routing ledger..."):
+        with st.spinner("Connecting to Gmail secure relays and distributing PDF reports..."):
             try:
-                EnterpriseEmailService.send_report(
-                    recipient_email=recipient,
+                count = EnterpriseEmailService.send_report(
+                    recipient_string=recipient_input,
                     attachment_path=st.session_state.last_generated_pdf,
-                    smtp_server=smtp_host,
-                    smtp_port=smtp_port,
-                    sender_email=auth_email,
-                    sender_password=auth_pass
+                    sender_email=email_sender,
+                    app_password=app_password,
+                    subject=custom_subject,
+                    body=custom_body
                 )
-                st.sidebar.success(f"Report dispatched to: '{recipient}'")
+                st.sidebar.success(f"🚀 PDF Report successfully sent to {count} recipient(s)!")
             except Exception as email_error:
                 st.sidebar.error(f"Transmission Failed: {str(email_error)}")
