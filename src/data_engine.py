@@ -9,7 +9,9 @@ class NiftyDataEngine:
     """Enterprise Data Engine for fetching and parsing Nifty 500 Market Performance data efficiently."""
     
     def __init__(self):
-        # CORRECTED: Set to the exact, permanent direct CSV index sheet path
+        # Local relative track layout
+        self.local_path = os.path.join("data", "ind_nifty500list.csv")
+        # Live web tracking fallback slug
         self.url = "https://niftyindices.com"
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
@@ -17,28 +19,32 @@ class NiftyDataEngine:
 
     @st.cache_data(ttl=3600)
     def fetch_master_list(_self) -> pd.DataFrame:
-        """Retrieves official Nifty 500 components from NSE with automated schema verification."""
-        try:
-            response = requests.get(_self.url, headers=_self.headers, timeout=15)
-            if response.status_code == 200:
-                df = pd.read_csv(BytesIO(response.content), on_bad_lines='skip')
-                
-                # Standardize column headers by stripping unwanted characters
+        """Retrieves Nifty 500 components, prioritizing high-speed local data files first."""
+        # PATHWAY 1: High-Speed Enterprise Local Repository Reading
+        if os.path.exists(_self.local_path):
+            try:
+                df = pd.read_csv(_self.local_path, on_bad_lines='skip')
                 df.columns = df.columns.str.strip()
-                
                 if 'Symbol' in df.columns:
                     return df.sort_values(by="Symbol").reset_index(drop=True)
-                else:
-                    raise KeyError("Required tracking key 'Symbol' not found in server response payload.")
-            else:
-                raise RuntimeError(f"NSE Server returned status code: {response.status_code}")
-                
+            except Exception as local_err:
+                st.warning(f"⚠️ Local repository file read anomaly: {local_err}. Falling back to web streams...")
+
+        # PATHWAY 2: Live Network Server Stream Fallback
+        try:
+            response = requests.get(_self.url, headers=_self.headers, timeout=10)
+            if response.status_code == 200:
+                df = pd.read_csv(BytesIO(response.content), on_bad_lines='skip')
+                df.columns = df.columns.str.strip()
+                if 'Symbol' in df.columns:
+                    return df.sort_values(by="Symbol").reset_index(drop=True)
+            raise RuntimeError(f"Server response logic error: {response.status_code}")
+            
         except Exception as e:
-            st.warning("⚠️ Primary server stream failed. Deploying alternative static repository backup...")
-            # Secure public mirror backup containing the complete verified Nifty 500 index schema
+            # PATHWAY 3: Secure Public Repository Mirror Check
             fallback_url = "https://githubusercontent.com"
             try:
-                response = requests.get(fallback_url, timeout=12)
+                response = requests.get(fallback_url, timeout=10)
                 df = pd.read_csv(BytesIO(response.content), on_bad_lines='skip')
                 df.columns = df.columns.str.strip()
                 return df.sort_values(by="Symbol").reset_index(drop=True)
@@ -50,13 +56,12 @@ class NiftyDataEngine:
         if df_nifty.empty or "Symbol" not in df_nifty.columns:
             return pd.DataFrame()
 
-        # Generate sanitized formatting strings for Yahoo Finance queries
         df_nifty["YF_Ticker"] = df_nifty["Symbol"].apply(
             lambda x: str(x).replace("&", "%26").strip() + ".NS"
         )
         ticker_list = df_nifty["YF_Ticker"].tolist()
 
-        # Concurrent processing download engine run
+        # High-concurrency array retrieval wrapper
         market_data = yf.download(
             tickers=" ".join(ticker_list),
             period="5d",
