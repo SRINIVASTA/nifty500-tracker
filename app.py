@@ -66,28 +66,44 @@ email_trigger = st.sidebar.button("Dispatch PDF Report", use_container_width=Tru
 if fetch_trigger:
     with st.spinner("Fetching live pricing data from market feeds & evaluating delta trends..."):
         try:
-            # 1. Fetch data from engine
+            # 1. Fetch raw data from engine
             master_list = engine.fetch_master_list()
             processed_df = engine.process_daily_performance(master_list)
             
-            # 2. Harmonize price metrics before sorting/filtering
-            if "Price Change (+/-)" not in processed_df.columns and "Price Change" in processed_df.columns:
-                processed_df["Price Change (+/-)"] = processed_df["Price Change"]
-            elif "Price Change (+/-)" not in processed_df.columns and "% Change" in processed_df.columns:
-                processed_df["Price Change (+/-)"] = processed_df["% Change"]
+            # 2. Robust Column Alignment for "Latest closing price (₹)"
+            # This loops through common names to find your close price column
+            close_col_candidates = ["Current Close", "Close", "Latest closing price (₹)", "Closing Price"]
+            found_close_col = None
+            for col in processed_df.columns:
+                if col in close_col_candidates or "close" in col.lower() or "price" in col.lower():
+                    found_close_col = col
+                    break
             
-            if "Latest closing price (₹)" not in processed_df.columns and "Current Close" in processed_df.columns:
-                processed_df["Latest closing price (₹)"] = processed_df["Current Close"]
-            elif "Latest closing price (₹)" not in processed_df.columns and "Close" in processed_df.columns:
-                processed_df["Latest closing price (₹)"] = processed_df["Close"]
+            if found_close_col:
+                # Force numeric conversion so math filters work perfectly
+                processed_df["Latest closing price (₹)"] = pd.to_numeric(processed_df[found_close_col], errors='coerce')
+            else:
+                # Fallback if no matching column name is discovered
+                processed_df["Latest closing price (₹)"] = 0.0
 
-            # 3. Apply operational UI Filters (Price & Date)
-            if "Latest closing price (₹)" in processed_df.columns:
-                processed_df = processed_df[
-                    (processed_df["Latest closing price (₹)"] >= price_from) & 
-                    (processed_df["Latest closing price (₹)"] <= price_to)
-                ]
+            # 3. Robust Column Alignment for "Price Change (+/-)"
+            if "Price Change (+/-)" not in processed_df.columns:
+                if "Price Change" in processed_df.columns:
+                    processed_df["Price Change (+/-)"] = processed_df["Price Change"]
+                elif "% Change" in processed_df.columns:
+                    processed_df["Price Change (+/-)"] = processed_df["% Change"]
+                else:
+                    processed_df["Price Change (+/-)"] = 0.0
+
+            # 4. Strict Numeric Price Filtering
+            # Dropping any NaN values to make sure boundaries evaluate properly
+            processed_df = processed_df.dropna(subset=["Latest closing price (₹)"])
+            processed_df = processed_df[
+                (processed_df["Latest closing price (₹)"] >= price_from) & 
+                (processed_df["Latest closing price (₹)"] <= price_to)
+            ]
             
+            # Optional: Apply dynamic date filters if date column is present
             if "Date" in processed_df.columns:
                 processed_df["Date"] = pd.to_datetime(processed_df["Date"]).dt.date
                 processed_df = processed_df[
@@ -98,11 +114,15 @@ if fetch_trigger:
             st.session_state.market_data = processed_df
             st.success(f"Live Ingestion Completed! Active coverage: {len(processed_df)} securities matching constraints.")
             
-            # 4. Generate PDF compiling ONLY the requested columns
+            # 5. Generate PDF compiling ONLY the 5 specific requested columns
             pdf_cols = ["NSE Ticker Symbol", "Company Name", "Latest closing price (₹)", "Direction", "Price Change (+/-)"]
-            available_pdf_cols = [c for c in pdf_cols if c in processed_df.columns]
             
-            pdf_export_df = processed_df[available_pdf_cols]
+            # Ensure columns exist in dataframe before exporting to avoid KeyErrors
+            for target_col in pdf_cols:
+                if target_col not in processed_df.columns:
+                    processed_df[target_col] = "N/A"
+                    
+            pdf_export_df = processed_df[pdf_cols]
             NiftyPDFGenerator.generate(pdf_export_df, st.session_state.last_generated_pdf)
             
         except Exception as error:
