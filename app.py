@@ -11,7 +11,7 @@ st.set_page_config(
     page_title="Nifty 500 Terminal", page_icon="📊", layout="wide"
 )
 
-# Instantiate the engine to handle data state transitions
+# Instantiate the enterprise data engine
 engine = NiftyDataEngine()
 
 if "market_data" not in st.session_state:
@@ -51,7 +51,7 @@ email_trigger = st.sidebar.button("Dispatch PDF Report", use_container_width=Tru
 
 # --- INGESTION CONTROLLER ENGINE ---
 if fetch_trigger:
-    with st.spinner("Fetching live pricing data from market feeds & evaluating delta trends..."):
+    with st.spinner("Fetching live pricing data from high-availability streams..."):
         try:
             master_list = engine.fetch_master_list()
             processed_df = engine.process_daily_performance(master_list)
@@ -59,26 +59,25 @@ if fetch_trigger:
             st.session_state.market_data = processed_df
             st.success(f"Live Ingestion Completed! Active coverage: {len(processed_df)} / 500 securities.")
             
+            # Generate the PDF matching the desktop tracking matrix schema immediately
             NiftyPDFGenerator.generate(processed_df, st.session_state.last_generated_pdf)
         except Exception as error:
             st.error(f"Pipeline Execution Aborted: {str(error)}")
 
-# --- VISUAL CONTROL DESK: BASELINE DATA LOAD PHASE ---
-# Check if live ingested data exists; if not, immediately serve the base 500 index matrix 
+# --- VISUAL CONTROL DESK: MASTER WORKSPACE ENTRY ---
 if st.session_state.market_data is not None:
     df = st.session_state.market_data
     is_live_feed = True
 else:
     try:
-        # Pre-load the constituent pool so the user can verify scrips before processing starts
+        # Instantly pull the base template list on system initialization
         df = engine.fetch_master_list()
         is_live_feed = False
-    except Exception as initialization_error:
-        st.error(f"Failed to pre-populate index ledger: {str(initialization_error)}")
+    except Exception as init_error:
+        st.error(f"Failed to pre-populate index matrix layout: {str(init_error)}")
         df = pd.DataFrame()
         is_live_feed = False
 
-# Render the Desktop View Grid if data layout is verified
 if not df.empty:
     if is_live_feed:
         up_scrip = int((df["Direction"] == "Up").sum())
@@ -90,25 +89,34 @@ if not df.empty:
         kpi2.metric(label="Declining Markets (🔴)", value=down_scrip)
         kpi3.metric(label="Index Delta Mean", value=f"{avg_shift:+.2f}%")
     else:
-        st.warning("⚠️ Hub Pipeline Standby: Displaying structural index tracking registry. Live metrics will map below after running execution pipeline.")
-    
+        st.warning("⚠️ Hub Pipeline Standby: Displaying corporate tracking framework. Click 'Execute Live Ingestion' to load currency closes.")
+
     tab_grid, tab_analytics = st.tabs(["📋 Master Ledger Workspace", "📈 Cross-Sectional Analytics"])
     
     with tab_grid:
-        search_query = st.text_input("Filter Ledger (Symbol / Company Name)")
+        # Determine sorting keys and base columns dynamically
+        symbol_col = "NSE Ticker Symbol" if "NSE Ticker Symbol" in df.columns else "Symbol"
+        
+        # In-line search filter context
+        search_query = st.text_input("Filter Ledger (Symbol / Company Name)", key="matrix_search_filter")
         filtered_df = df
+        
         if search_query:
-            # Handle standard column lookups based on state context
-            symbol_col = "NSE Ticker Symbol" if is_live_feed else "Symbol"
-            if symbol_col in df.columns and "Company Name" in df.columns:
-                filtered_df = df[
-                    df[symbol_col].str.contains(search_query, case=False) | 
-                    df["Company Name"].str.contains(search_query, case=False)
-                ]
-            
+            filtered_df = df[
+                df[symbol_col].str.contains(search_query, case=False) | 
+                df["Company Name"].str.contains(search_query, case=False)
+            ]
+        
+        # Render the tracking workspace grid with color formatting rules matching your PDF target
         if is_live_feed:
+            # Format absolute metrics into standard display strings safely
+            formatted_df = filtered_df.copy()
+            for col in formatted_df.columns:
+                if "Close" in col:
+                    formatted_df[col] = formatted_df[col].apply(lambda x: f"₹{x:,.2f}")
+            
             st.dataframe(
-                filtered_df.style.map(
+                formatted_df.style.map(
                     lambda val: "color: #00875A; font-weight: bold;" if val == "Up" else ("color: #DE350B; font-weight: bold;" if val == "Down" else ""),
                     subset=["Direction"]
                 ),
@@ -116,9 +124,8 @@ if not df.empty:
                 height=500
             )
         else:
-            # Baseline interactive workspace view
-            st.dataframe(filtered_df, use_container_width=True, height=500)
-        
+            st.dataframe(filtered_df[[symbol_col, "Company Name", "Industry"]], use_container_width=True, height=500)
+            
         if is_live_feed and os.path.exists(st.session_state.last_generated_pdf):
             with open(st.session_state.last_generated_pdf, "rb") as file_bytes:
                 st.download_button(
