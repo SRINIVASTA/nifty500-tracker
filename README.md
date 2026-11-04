@@ -71,7 +71,7 @@ Create a local folder named `.streamlit` and save your private relay endpoints i
 ```
 
 ### 2. Boot Up the Streamlit Core Server
-Run the platform using the explicit network flag to map the interface directly to port `8056`:
+Run the platform using the explicit network flag to map the interface directly to port `8501`:
 
 ```bash
 streamlit run app.py --server.port 8501 --server.address localhost
