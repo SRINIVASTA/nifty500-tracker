@@ -29,9 +29,9 @@ st.sidebar.header("⚙️ Pipeline Execution Control")
 # Date Selection Panel
 col_d1, col_d2 = st.sidebar.columns(2)
 with col_d1:
-    start_date = st.date_input("Start Date", datetime.today() - timedelta(days=1))
+    start_date = st.date_input("Start Date", datetime(2026, 11, 3).date())
 with col_d2:
-    end_date = st.date_input("End Date", datetime.today())
+    end_date = st.date_input("End Date", datetime(2026, 11, 4).date())
 
 # Price Ingestion Filter Panel
 col_p1, col_p2 = st.sidebar.columns(2)
@@ -64,60 +64,48 @@ email_trigger = st.sidebar.button("Dispatch PDF Report", use_container_width=Tru
 
 # --- INGESTION CONTROLLER ENGINE ---
 if fetch_trigger:
-    with st.spinner("Fetching live pricing data from market feeds & evaluating delta trends..."):
+    with st.spinner("Ingesting and normalizing tracking data layout parameters..."):
         try:
-            # 1. Fetch raw master template from engine
+            # 1. Fetch data from engine / file stream
             master_list = engine.fetch_master_list()
+            processed_df = engine.process_daily_performance(master_list)
             
-            # 2. Inject operational criteria directly into the core engine calculations block if supported
-            try:
-                processed_df = engine.process_daily_performance(
-                    master_list, 
-                    start_date=start_date, 
-                    end_date=end_date, 
-                    price_from=price_from, 
-                    price_to=price_to
-                )
-            except TypeError:
-                # Fallback implementation signature if the engine does not support inline parameters
-                processed_df = engine.process_daily_performance(master_list)
-            
-            # 3. Locate and strictly standardize Trade Date parameters
-            date_col_candidates = ["Trade Date", "Date", "trade_date", "date"]
-            found_date_col = None
-            for col in processed_df.columns:
-                if col in date_col_candidates or "date" in col.lower():
-                    found_date_col = col
-                    break
-            
-            # 4. Strict isolation: enforce dataset to only preserve targeted "End Date" rows
-            if found_date_col:
-                processed_df[found_date_col] = pd.to_datetime(processed_df[found_date_col]).dt.date
-                processed_df = processed_df[processed_df[found_date_col] == end_date].copy()
-            
-            # 5. Force target column alignment mapping for Closing Metrics
-            close_col_candidates = ["Current Close", "Close", "Latest closing price (₹)", "Closing Price"]
-            found_close_col = None
-            for col in processed_df.columns:
-                if col in close_col_candidates or "close" in col.lower() or "price" in col.lower():
-                    found_close_col = col
-                    break
+            # Helper logic to strip out '₹' symbols and commas for clean processing
+            def clean_numeric_str(val):
+                if pd.isna(val):
+                    return 0.0
+                if isinstance(val, (int, float)):
+                    return float(val)
+                # Strip symbols and convert to standard numeric float
+                cleaned = str(val).replace('₹', '').replace(',', '').strip()
+                return pd.to_numeric(cleaned, errors='coerce')
 
-            if found_close_col:
-                processed_df["Latest closing price (₹)"] = pd.to_numeric(processed_df[found_close_col], errors='coerce')
+            # 2. Map End Date dynamically to extract target price column layout
+            # Generates string matching pattern: "Close (2026-11-04) (₹)"
+            target_end_date_col = f"Close ({end_date.strftime('%Y-%m-%d')}) (₹)"
+            
+            if target_end_date_col in processed_df.columns:
+                # Force extract closing values using clean calculations mapped to End Date column exclusively
+                processed_df["Latest closing price (₹)"] = processed_df[target_end_date_col].apply(clean_numeric_str)
             else:
-                processed_df["Latest closing price (₹)"] = 0.0
-
-            # 6. Harmonize delta columns format structure
-            if "Price Change (+/-)" not in processed_df.columns:
-                if "Price Change" in processed_df.columns:
-                    processed_df["Price Change (+/-)"] = processed_df["Price Change"]
-                elif "% Change" in processed_df.columns:
-                    processed_df["Price Change (+/-)"] = processed_df["% Change"]
+                # Fallback parser looking broadly for closing labels in case schema shifted
+                fallback_close = [c for c in processed_df.columns if "close" in c.lower() and f"{end_date.strftime('%m-%d')}" in c]
+                if fallback_close:
+                    processed_df["Latest closing price (₹)"] = processed_df[fallback_close[0]].apply(clean_numeric_str)
+                elif "Latest closing price (₹)" in processed_df.columns:
+                    processed_df["Latest closing price (₹)"] = processed_df["Latest closing price (₹)"].apply(clean_numeric_str)
                 else:
-                    processed_df["Price Change (+/-)"] = 0.0
+                    processed_df["Latest closing price (₹)"] = 0.0
 
-            # 7. Post Ingestion Guardrail: Enforce manual numeric range filtration criteria
+            # 3. Clean and map Delta Metrics: "Price Change (+/-)"
+            if "Price Change (+/-)" in processed_df.columns:
+                processed_df["Price Change (+/-)"] = processed_df["Price Change (+/-)"].apply(clean_numeric_str)
+            elif "% Change" in processed_df.columns:
+                processed_df["Price Change (+/-)"] = processed_df["% Change"].apply(clean_numeric_str)
+            else:
+                processed_df["Price Change (+/-)"] = 0.0
+
+            # 4. Enforce price range boundaries strictly matching sanitized user inputs
             processed_df = processed_df.dropna(subset=["Latest closing price (₹)"])
             processed_df = processed_df[
                 (processed_df["Latest closing price (₹)"] >= price_from) & 
@@ -125,19 +113,17 @@ if fetch_trigger:
             ]
 
             st.session_state.market_data = processed_df
-            st.success(f"Ingestion Finished! Compiled {len(processed_df)} securities matching constraints strictly for: {end_date}.")
+            st.success(f"Ingestion Finished! Extracted {len(processed_df)} securities matching rules strictly on Target Date: {end_date}.")
             
-            # 8. Filter down to the 5 requested attributes for the clean PDF file export matrix
+            # 5. Compile PDF with exactly the 5 requested header assets
             pdf_cols = ["NSE Ticker Symbol", "Company Name", "Latest closing price (₹)", "Direction", "Price Change (+/-)"]
             
+            # Fill missing column exceptions cleanly to avoid crash errors
             for target_col in pdf_cols:
                 if target_col not in processed_df.columns:
-                    if target_col == "NSE Ticker Symbol" and "Symbol" in processed_df.columns:
-                        processed_df["NSE Ticker Symbol"] = processed_df["Symbol"]
-                    else:
-                        processed_df[target_col] = "N/A"
-                    
-            pdf_export_df = processed_df[pdf_cols]
+                    processed_df[target_col] = "N/A"
+            
+            pdf_export_df = processed_df[pdf_cols].copy()
             NiftyPDFGenerator.generate(pdf_export_df, st.session_state.last_generated_pdf)
             
         except Exception as error:
@@ -161,8 +147,8 @@ if not filtered_df.empty:
         up_scrip = int((filtered_df["Direction"] == "Up").sum())
         down_scrip = int((filtered_df["Direction"] == "Down").sum())
         
-        target_delta_col = "Price Change (+/-)" if "Price Change (+/-)" in filtered_df.columns else "Price Change"
-        avg_shift = float(filtered_df[target_delta_col].mean()) if target_delta_col in filtered_df.columns and not filtered_df.empty else 0.0
+        target_delta_col = "Price Change (+/-)" if "Price Change (+/-)" in filtered_df.columns else filtered_df.columns[-1]
+        avg_shift = float(filtered_df[target_delta_col].mean()) if not filtered_df.empty else 0.0
         
         kpi1, kpi2, kpi3 = st.columns(3)
         kpi1.metric(label="Advancing Markets (🟢)", value=up_scrip)
@@ -174,7 +160,7 @@ if not filtered_df.empty:
     tab_grid, tab_analytics = st.tabs(["📋 Master Ledger Workspace", "📈 Cross-Sectional Analytics"])
     
     with tab_grid:
-        symbol_col = "NSE Ticker Symbol" if is_live_feed else "Symbol"
+        symbol_col = "NSE Ticker Symbol" if "NSE Ticker Symbol" in filtered_df.columns else "Symbol"
         
         search_query = st.text_input("Filter Ledger (Symbol / Company Name)", key="matrix_search_filter")
         if search_query:
@@ -186,8 +172,9 @@ if not filtered_df.empty:
             
         if is_live_feed:
             formatted_df = filtered_df.copy()
+            # Explicit formatting presentation for standard interface rendering
             for col in formatted_df.columns:
-                if "Close" in col or "price" in col.lower() or "Price Change" in col:
+                if "price" in col.lower() or "Price Change" in col:
                     try:
                         formatted_df[col] = formatted_df[col].apply(lambda x: f"₹{x:,.2f}" if isinstance(x, (int, float)) else x)
                     except Exception:
@@ -228,7 +215,7 @@ if not filtered_df.empty:
                     target_sort = "Price Change (+/-)" if "Price Change (+/-)" in filtered_df.columns else filtered_df.columns[-1]
                     sorted_df = filtered_df.sort_values(by=target_sort)
                     top_performers = pd.concat([sorted_df.head(5), sorted_df.tail(5)]).drop_duplicates()
-                    fig_bar = px.bar(top_performers, x=target_sort, y="NSE Ticker Symbol", orientation="h",
+                    fig_bar = px.bar(top_performers, x=target_sort, y=symbol_col, orientation="h",
                                      color="Direction", color_discrete_map={"Up": "#00875A", "Down": "#DE350B"})
                     st.plotly_chart(fig_bar, use_container_width=True)
             else:
