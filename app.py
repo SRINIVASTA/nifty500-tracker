@@ -66,11 +66,23 @@ email_trigger = st.sidebar.button("Dispatch PDF Report", use_container_width=Tru
 if fetch_trigger:
     with st.spinner("Fetching live pricing data from market feeds & evaluating delta trends..."):
         try:
-            # 1. Fetch raw matrix data from engine
+            # 1. Fetch raw master template from engine
             master_list = engine.fetch_master_list()
-            processed_df = engine.process_daily_performance(master_list)
             
-            # 2. Locate Trade Date column configuration setup
+            # 2. Inject operational criteria directly into the core engine calculations block if supported
+            try:
+                processed_df = engine.process_daily_performance(
+                    master_list, 
+                    start_date=start_date, 
+                    end_date=end_date, 
+                    price_from=price_from, 
+                    price_to=price_to
+                )
+            except TypeError:
+                # Fallback implementation signature if the engine does not support inline parameters
+                processed_df = engine.process_daily_performance(master_list)
+            
+            # 3. Locate and strictly standardize Trade Date parameters
             date_col_candidates = ["Trade Date", "Date", "trade_date", "date"]
             found_date_col = None
             for col in processed_df.columns:
@@ -78,12 +90,12 @@ if fetch_trigger:
                     found_date_col = col
                     break
             
-            # 3. CRITICAL: Strictly slice dataframe down to the "End Date" (To Date) rows first
+            # 4. Strict isolation: enforce dataset to only preserve targeted "End Date" rows
             if found_date_col:
                 processed_df[found_date_col] = pd.to_datetime(processed_df[found_date_col]).dt.date
                 processed_df = processed_df[processed_df[found_date_col] == end_date].copy()
             
-            # 4. Extract "Latest closing price (₹)" strictly from the remaining target date records
+            # 5. Force target column alignment mapping for Closing Metrics
             close_col_candidates = ["Current Close", "Close", "Latest closing price (₹)", "Closing Price"]
             found_close_col = None
             for col in processed_df.columns:
@@ -96,7 +108,7 @@ if fetch_trigger:
             else:
                 processed_df["Latest closing price (₹)"] = 0.0
 
-            # 5. Harmonize "Price Change (+/-)" parameters
+            # 6. Harmonize delta columns format structure
             if "Price Change (+/-)" not in processed_df.columns:
                 if "Price Change" in processed_df.columns:
                     processed_df["Price Change (+/-)"] = processed_df["Price Change"]
@@ -105,7 +117,7 @@ if fetch_trigger:
                 else:
                     processed_df["Price Change (+/-)"] = 0.0
 
-            # 6. Apply Numeric Value Scope Range Filters
+            # 7. Post Ingestion Guardrail: Enforce manual numeric range filtration criteria
             processed_df = processed_df.dropna(subset=["Latest closing price (₹)"])
             processed_df = processed_df[
                 (processed_df["Latest closing price (₹)"] >= price_from) & 
@@ -113,9 +125,9 @@ if fetch_trigger:
             ]
 
             st.session_state.market_data = processed_df
-            st.success(f"Ingestion Finished! Extracted {len(processed_df)} records matching price conditions strictly on Target Date: {end_date}.")
+            st.success(f"Ingestion Finished! Compiled {len(processed_df)} securities matching constraints strictly for: {end_date}.")
             
-            # 7. Build PDF containing ONLY the 5 explicit requested fields
+            # 8. Filter down to the 5 requested attributes for the clean PDF file export matrix
             pdf_cols = ["NSE Ticker Symbol", "Company Name", "Latest closing price (₹)", "Direction", "Price Change (+/-)"]
             
             for target_col in pdf_cols:
