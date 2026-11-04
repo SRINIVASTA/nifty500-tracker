@@ -9,10 +9,9 @@ class NiftyDataEngine:
     """Enterprise Data Engine for fetching and parsing Nifty 500 Market Performance data efficiently."""
     
     def __init__(self):
-        # Local relative track layout
         self.local_path = os.path.join("data", "ind_nifty500list.csv")
-        # Live web tracking fallback slug pointing directly to the raw CSV stream
-        self.url = "https://niftyindices.com"
+        # Fixed: Directly targets the authentic data endpoint
+        self.url = "https://nseindia.com"
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         }
@@ -20,7 +19,6 @@ class NiftyDataEngine:
     @st.cache_data(ttl=3600)
     def fetch_master_list(_self) -> pd.DataFrame:
         """Retrieves Nifty 500 components, prioritizing high-speed local data files first."""
-        # PATHWAY 1: High-Speed Enterprise Local Repository Reading
         if os.path.exists(_self.local_path):
             try:
                 df = pd.read_csv(_self.local_path, on_bad_lines='skip')
@@ -30,7 +28,7 @@ class NiftyDataEngine:
             except Exception as local_err:
                 st.warning(f"⚠️ Local repository file read anomaly: {local_err}. Falling back to web streams...")
 
-        # PATHWAY 2: Live Network Server Stream Fallback
+        # PATHWAY 2: Primary Live Ingestion Fallback
         try:
             response = requests.get(_self.url, headers=_self.headers, timeout=10)
             if response.status_code == 200:
@@ -41,7 +39,7 @@ class NiftyDataEngine:
             raise RuntimeError(f"Server response logic error: {response.status_code}")
             
         except Exception as e:
-            # PATHWAY 3: Secure Public Repository Mirror Check
+            # PATHWAY 3: Secondary Mirror Fallback
             fallback_url = "https://githubusercontent.com"
             try:
                 response = requests.get(fallback_url, timeout=10)
@@ -61,7 +59,6 @@ class NiftyDataEngine:
         )
         ticker_list = df_nifty["YF_Ticker"].tolist()
 
-        # High-concurrency array retrieval wrapper
         market_data = yf.download(
             tickers=" ".join(ticker_list),
             period="5d",
