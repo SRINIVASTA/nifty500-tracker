@@ -29,7 +29,7 @@ st.sidebar.header("⚙️ Pipeline Execution Control")
 # Date Selection Panel
 col_d1, col_d2 = st.sidebar.columns(2)
 with col_d1:
-    start_date = st.date_input("Start Date", datetime(2026, 11, 3).date())
+    start_date = st.date_input("Start Date", datetime(2026, 11, 2).date())
 with col_d2:
     end_date = st.date_input("End Date", datetime(2026, 11, 4).date())
 
@@ -66,35 +66,37 @@ email_trigger = st.sidebar.button("Dispatch PDF Report", use_container_width=Tru
 if fetch_trigger:
     with st.spinner("Ingesting and normalizing tracking data layout parameters..."):
         try:
-            # 1. Fetch data from engine / file stream
+            # 1. Fetch data from engine
             master_list = engine.fetch_master_list()
             processed_df = engine.process_daily_performance(master_list)
             
-            # Helper logic to strip out '₹' symbols and commas for clean processing
+            # Helper function to remove currency symbols and clean data for calculations
             def clean_numeric_str(val):
                 if pd.isna(val):
                     return 0.0
                 if isinstance(val, (int, float)):
                     return float(val)
-                # Strip symbols and convert to standard numeric float
                 cleaned = str(val).replace('₹', '').replace(',', '').strip()
                 return pd.to_numeric(cleaned, errors='coerce')
 
-            # 2. Map End Date dynamically to extract target price column layout
-            # Generates string matching pattern: "Close (2026-11-04) (₹)"
+            # 2. DYNAMICALLY target the End Date (To Date) Closing Column from your CSV layout
+            # Generates exact match string like: "Close (2026-11-04) (₹)"
             target_end_date_col = f"Close ({end_date.strftime('%Y-%m-%d')}) (₹)"
             
             if target_end_date_col in processed_df.columns:
-                # Force extract closing values using clean calculations mapped to End Date column exclusively
+                # Enforce mapping using strictly the To Date price structure
                 processed_df["Latest closing price (₹)"] = processed_df[target_end_date_col].apply(clean_numeric_str)
             else:
-                # Fallback parser looking broadly for closing labels in case schema shifted
-                fallback_close = [c for c in processed_df.columns if "close" in c.lower() and f"{end_date.strftime('%m-%d')}" in c]
-                if fallback_close:
-                    processed_df["Latest closing price (₹)"] = processed_df[fallback_close[0]].apply(clean_numeric_str)
+                # Smart fallback parser in case column naming matches a different template syntax
+                fallback_cols = [c for c in processed_df.columns if "close" in c.lower() and end_date.strftime('%Y') in c]
+                matched_fallback = [c for c in fallback_cols if end_date.strftime('%m-%d') in c or f"{end_date.day:02d}" in c]
+                
+                if matched_fallback:
+                    processed_df["Latest closing price (₹)"] = processed_df[matched_fallback[0]].apply(clean_numeric_str)
                 elif "Latest closing price (₹)" in processed_df.columns:
                     processed_df["Latest closing price (₹)"] = processed_df["Latest closing price (₹)"].apply(clean_numeric_str)
                 else:
+                    st.error(f"Could not find a price column matching the target date: {end_date}")
                     processed_df["Latest closing price (₹)"] = 0.0
 
             # 3. Clean and map Delta Metrics: "Price Change (+/-)"
@@ -105,7 +107,7 @@ if fetch_trigger:
             else:
                 processed_df["Price Change (+/-)"] = 0.0
 
-            # 4. Enforce price range boundaries strictly matching sanitized user inputs
+            # 4. Enforce structural numeric range filter boundaries cleanly
             processed_df = processed_df.dropna(subset=["Latest closing price (₹)"])
             processed_df = processed_df[
                 (processed_df["Latest closing price (₹)"] >= price_from) & 
@@ -113,15 +115,17 @@ if fetch_trigger:
             ]
 
             st.session_state.market_data = processed_df
-            st.success(f"Ingestion Finished! Extracted {len(processed_df)} securities matching rules strictly on Target Date: {end_date}.")
+            st.success(f"Ingestion Finished! Extracted {len(processed_df)} securities matching rules strictly on Target End Date: {end_date}.")
             
-            # 5. Compile PDF with exactly the 5 requested header assets
+            # 5. Compile PDF with exactly the 5 requested header columns
             pdf_cols = ["NSE Ticker Symbol", "Company Name", "Latest closing price (₹)", "Direction", "Price Change (+/-)"]
             
-            # Fill missing column exceptions cleanly to avoid crash errors
             for target_col in pdf_cols:
                 if target_col not in processed_df.columns:
-                    processed_df[target_col] = "N/A"
+                    if target_col == "NSE Ticker Symbol" and "Symbol" in processed_df.columns:
+                        processed_df["NSE Ticker Symbol"] = processed_df["Symbol"]
+                    else:
+                        processed_df[target_col] = "N/A"
             
             pdf_export_df = processed_df[pdf_cols].copy()
             NiftyPDFGenerator.generate(pdf_export_df, st.session_state.last_generated_pdf)
@@ -172,7 +176,7 @@ if not filtered_df.empty:
             
         if is_live_feed:
             formatted_df = filtered_df.copy()
-            # Explicit formatting presentation for standard interface rendering
+            # Clean view rendering presentation layer
             for col in formatted_df.columns:
                 if "price" in col.lower() or "Price Change" in col:
                     try:
