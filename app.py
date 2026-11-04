@@ -70,7 +70,7 @@ if fetch_trigger:
             master_list = engine.fetch_master_list()
             processed_df = engine.process_daily_performance(master_list)
             
-            # 2. Locate Trade Date column setup
+            # 2. Locate Trade Date column configuration setup
             date_col_candidates = ["Trade Date", "Date", "trade_date", "date"]
             found_date_col = None
             for col in processed_df.columns:
@@ -78,7 +78,12 @@ if fetch_trigger:
                     found_date_col = col
                     break
             
-            # 3. Explicitly extract the closing price on the "To Date" (End Date)
+            # 3. CRITICAL: Strictly slice dataframe down to the "End Date" (To Date) rows first
+            if found_date_col:
+                processed_df[found_date_col] = pd.to_datetime(processed_df[found_date_col]).dt.date
+                processed_df = processed_df[processed_df[found_date_col] == end_date].copy()
+            
+            # 4. Extract "Latest closing price (₹)" strictly from the remaining target date records
             close_col_candidates = ["Current Close", "Close", "Latest closing price (₹)", "Closing Price"]
             found_close_col = None
             for col in processed_df.columns:
@@ -86,21 +91,12 @@ if fetch_trigger:
                     found_close_col = col
                     break
 
-            if found_date_col and found_close_col:
-                processed_df[found_date_col] = pd.to_datetime(processed_df[found_date_col]).dt.date
-                
-                # Filter down the master frame data strictly to the End Date rows 
-                # This guarantees that the calculated closing values are from the "To Date" only
-                end_date_df = processed_df[processed_df[found_date_col] == end_date].copy()
-                end_date_df["Latest closing price (₹)"] = pd.to_numeric(end_date_df[found_close_col], errors='coerce')
-                processed_df = end_date_df
+            if found_close_col:
+                processed_df["Latest closing price (₹)"] = pd.to_numeric(processed_df[found_close_col], errors='coerce')
             else:
-                if found_close_col:
-                    processed_df["Latest closing price (₹)"] = pd.to_numeric(processed_df[found_close_col], errors='coerce')
-                else:
-                    processed_df["Latest closing price (₹)"] = 0.0
+                processed_df["Latest closing price (₹)"] = 0.0
 
-            # 4. Harmonize "Price Change (+/-)" metrics
+            # 5. Harmonize "Price Change (+/-)" parameters
             if "Price Change (+/-)" not in processed_df.columns:
                 if "Price Change" in processed_df.columns:
                     processed_df["Price Change (+/-)"] = processed_df["Price Change"]
@@ -109,7 +105,7 @@ if fetch_trigger:
                 else:
                     processed_df["Price Change (+/-)"] = 0.0
 
-            # 5. Apply Price Range Filter using End Date values
+            # 6. Apply Numeric Value Scope Range Filters
             processed_df = processed_df.dropna(subset=["Latest closing price (₹)"])
             processed_df = processed_df[
                 (processed_df["Latest closing price (₹)"] >= price_from) & 
@@ -117,9 +113,9 @@ if fetch_trigger:
             ]
 
             st.session_state.market_data = processed_df
-            st.success(f"Ingestion Finished! Extracted {len(processed_df)} records matching price conditions strictly on: {end_date}.")
+            st.success(f"Ingestion Finished! Extracted {len(processed_df)} records matching price conditions strictly on Target Date: {end_date}.")
             
-            # 6. Build PDF with the 5 explicit requested fields
+            # 7. Build PDF containing ONLY the 5 explicit requested fields
             pdf_cols = ["NSE Ticker Symbol", "Company Name", "Latest closing price (₹)", "Direction", "Price Change (+/-)"]
             
             for target_col in pdf_cols:
