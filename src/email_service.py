@@ -13,44 +13,33 @@ class EnterpriseEmailService:
         if not os.path.exists(attachment_path):
             raise FileNotFoundError(f"Attachment target missing: {attachment_path}")
 
-        # Clean and convert the input string into a proper Python list
         recipient_list = [email.strip() for email in recipient_string.split(",") if email.strip()]
         if not recipient_list:
             raise ValueError("No valid recipient email addresses found.")
 
-        # Default contents if not custom-defined by the workspace UI
         email_subject = subject or "Automated Executive Briefing: Nifty 500 Market Matrix"
-        email_body = body or (
-            "Team,\n\nPlease find attached the automated compliance ledger "
-            "tracking the daily delta shifts across all Nifty 500 index constituents.\n\n"
-            "System Automated Broadcast Engine."
-        )
+        email_body = body or "Team,\n\nPlease find attached the automated tracking matrix report."
 
-        # Correct SMTP address configuration for Gmail Secure Relays
-        server = smtplib.SMTP('://gmail.com', 587)
+        # Fixed: Corrected malformed SMTP connection target string
+        server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(sender_email, app_password)
 
-        # Loop through each recipient and send individually
         for index, receiver in enumerate(recipient_list):
             msg = MIMEMultipart()
             msg['From'] = sender_email
             msg['To'] = receiver
             msg['Subject'] = email_subject
             
-            # Attach plain-text body copy
             msg.attach(MIMEText(email_body, 'plain'))
 
-            # Read and inject the physical PDF binary stream payload
             with open(attachment_path, "rb") as f:
                 part = MIMEApplication(f.read(), Name=os.path.basename(attachment_path))
                 part['Content-Disposition'] = f'attachment; filename="{os.path.basename(attachment_path)}"'
                 msg.attach(part)
 
-            # Route out the constructed email packet
             server.sendmail(sender_email, receiver, msg.as_string())
             
-            # Anti-spam delay: sleep for 1 second if sending to multiple people
             if len(recipient_list) > 1 and index < len(recipient_list) - 1:
                 time.sleep(1)
 
