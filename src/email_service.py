@@ -26,7 +26,7 @@ class EnterpriseEmailService:
             "System Automated Broadcast Engine."
         )
 
-        # Establish secure connection to Gmail
+        # Correct SMTP address configuration for Gmail Secure Relays
         server = smtplib.SMTP('://gmail.com', 587)
         server.starttls()
         server.login(sender_email, app_password)
