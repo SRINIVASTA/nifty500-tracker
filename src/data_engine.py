@@ -11,7 +11,7 @@ class NiftyDataEngine:
     
     def __init__(self):
         self.local_path = os.path.join("data", "ind_nifty500list.csv")
-        self.url = "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv"
+        self.url = "https://nseindia.com"
         self.mirror_url = "https://githubusercontent.com"
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -60,26 +60,26 @@ class NiftyDataEngine:
             raise RuntimeError(f"All ingest pathways exhausted: {str(e)}")
 
     def process_daily_performance(self, df_nifty: pd.DataFrame, start_date=None, end_date=None) -> pd.DataFrame:
-        """Downloads exact window closing prices handling user-defined start and end dates dynamically."""
+        """Downloads exact window closing prices handling user-defined start and end dates dynamically without index shifting anomalies."""
         if df_nifty.empty or "Symbol" not in df_nifty.columns:
             return pd.DataFrame()
 
-        # Fallbacks to yesterday/today if UI arguments are missing
+        # Fallbacks if UI selection arguments are absent
         if start_date is None:
             start_date = (datetime.today() - pd.Timedelta(days=2)).date()
         if end_date is None:
             end_date = datetime.today().date()
 
-        # Add 1 day to end_date because yfinance historical downloads exclude the last boundary day
-        yf_start = start_date.strftime("%Y-%m-%d")
-        yf_end = (end_date + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+        # Broaden download scope window by 7 days on both ends to protect holiday edge scenarios
+        yf_start = (start_date - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
+        yf_end = (end_date + pd.Timedelta(days=7)).strftime("%Y-%m-%d")
 
         df_nifty["YF_Ticker"] = df_nifty["Symbol"].apply(
             lambda x: str(x).replace("&", "%26").strip() + ".NS"
         )
         ticker_list = df_nifty["YF_Ticker"].tolist()
 
-        # Fetch explicitly within the custom user date ranges
+        # Execute parallel historical batch fetch
         market_data = yf.download(
             tickers=" ".join(ticker_list),
             start=yf_start,
@@ -87,7 +87,7 @@ class NiftyDataEngine:
             group_by="ticker",
             threads=True,
             progress=False,
-            timeout=20
+            timeout=30
         )
 
         if market_data.empty:
@@ -95,12 +95,9 @@ class NiftyDataEngine:
 
         results = []
         
-        # Enforce header labels dynamically matching your chosen operational dates
+        # Core ISO String transformations
         str_start_date = start_date.strftime("%Y-%m-%d")
         str_end_date = end_date.strftime("%Y-%m-%d")
-        
-        header_start = f"Close ({str_start_date}) (₹)"
-        header_end = f"Close ({str_end_date}) (₹)"
 
         for _, row in df_nifty.iterrows():
             symbol = row["Symbol"]
@@ -109,7 +106,7 @@ class NiftyDataEngine:
             yf_symbol = row["YF_Ticker"]
 
             try:
-                # Isolate target ticker frame array data
+                # Isolate target ticker level multi-index dataframe
                 if yf_symbol in market_data.columns.get_level_values(0):
                     ticker_history = market_data[yf_symbol].dropna(subset=["Close"])
                 elif "Close" in market_data.columns.get_level_values(0) and yf_symbol in market_data.columns.get_level_values(1):
@@ -118,27 +115,43 @@ class NiftyDataEngine:
                     continue
 
                 if not ticker_history.empty:
-                    # Dynamically look for the row corresponding exactly to your date options
-                    history_dates = ticker_history.index.strftime("%Y-%m-%d")
+                    history_dates = [d.strftime("%Y-%m-%d") for d in ticker_history.index]
                     
-                    if str_start_date in history_dates and str_end_date in history_dates:
+                    # 1. Target exact Start Date or fallback to closest earlier trading session close
+                    if str_start_date in history_dates:
                         start_close = float(ticker_history.loc[str_start_date, "Close"])
-                        end_close = float(ticker_history.loc[str_end_date, "Close"])
+                        real_start_str = str_start_date
                     else:
-                        # Fallback to closest available positional data points if market holidays are chosen
-                        if len(ticker_history) >= 2:
-                            start_close = float(ticker_history["Close"].iloc[0])
-                            end_close = float(ticker_history["Close"].iloc[-1])
+                        available_before = ticker_history[ticker_history.index.date <= start_date]
+                        if not available_before.empty:
+                            start_close = float(available_before["Close"].iloc[-1])
+                            real_start_str = available_before.index[-1].strftime("%Y-%m-%d")
+                        else:
+                            continue
+
+                    # 2. Target exact End Date or fallback to closest earlier trading session close
+                    if str_end_date in history_dates:
+                        end_close = float(ticker_history.loc[str_end_date, "Close"])
+                        real_end_str = str_end_date
+                    else:
+                        available_after = ticker_history[ticker_history.index.date <= end_date]
+                        if not available_after.empty:
+                            end_close = float(available_after["Close"].iloc[-1])
+                            real_end_str = available_after.index[-1].strftime("%Y-%m-%d")
                         else:
                             continue
 
                     if start_close == 0 or pd.isna(start_close) or pd.isna(end_close):
                         continue
 
-                    # Evaluate metrics using actual end data points 
+                    # True net performance mathematical parsing over the selected gap period
                     price_change = end_close - start_close
                     pct_change = (price_change / start_close) * 100
                     direction = "Up" if pct_change >= 0 else "Down"
+
+                    # Generate dynamic layout headers tracking true execution dates
+                    header_start = f"Close ({real_start_str}) (₹)"
+                    header_end = f"Close ({real_end_str}) (₹)"
 
                     results.append({
                         "NSE Ticker Symbol": symbol,
@@ -148,7 +161,7 @@ class NiftyDataEngine:
                         header_end: round(end_close, 2),
                         "% Change": round(pct_change, 2),
                         "Direction": direction,
-                        # Map To-Date close explicitly into the columns requested by your PDF
+                        # Pin the exact End Date closing price cleanly to the requested PDF columns
                         "Latest closing price (₹)": round(end_close, 2),
                         "Price Change (+/-)": round(price_change, 2)
                     })
