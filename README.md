@@ -4,6 +4,25 @@ A production-grade Streamlit terminal engineered to map daily market trends acro
 
 ---
 
+## 📂 System Architecture Repository Tree
+
+```unset
+nifty500-market-matrix/
+├── .streamlit/
+│   └── secrets.toml          # Encrypted enterprise credentials & target email storage
+├── data/
+│   └── ind_nifty500list.csv  # High-speed local baseline ledger fallback (Auto-generated)
+├── src/
+│   ├── __init__.py           # Explicit package boundary initialization
+│   ├── data_engine.py        # Core processing matrix bypassing firewall blocks (yfinance)
+│   ├── email_service.py      # Secure SMTP distribution layer targeting port 587
+│   └── pdf_generator.py      # Production ReportLab engine drafting landscape documents
+├── app.py                    # Streamlit interface executing port 8056 runtimes
+└── README.md                 # System operational manual with structural Mermaid diagrams
+```
+
+---
+
 ## 🛠️ Architecture & Core Components
 
 ```mermaid
@@ -54,7 +73,7 @@ Create a local folder named `.streamlit` and save your private relay endpoints i
 [gmail]
 username = "your-automated-system@gmail.com"
 app_password = "xxxx xxxx xxxx xxxx" # 16-digit Google App Password
-to_email = "hisrinivas1972@gmail.com"
+to_email = "**************@gmail.com"
 ```
 
 ### 2. Boot Up the Streamlit Core Server
@@ -64,8 +83,8 @@ Run the platform using the explicit network flag to map the interface directly t
 streamlit run app.py --server.port 8056 --server.address localhost
 ```
 
-Once executed, open your desktop browser and navigate to:
-🔗 **`http://localhost:8506`**
+Once executed, open your desktop browser and navigate to the corrected port address:
+🔗 **`http://localhost:8056`**
 
 ---
 
