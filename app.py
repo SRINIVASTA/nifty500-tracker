@@ -66,11 +66,11 @@ email_trigger = st.sidebar.button("Dispatch PDF Report", use_container_width=Tru
 if fetch_trigger:
     with st.spinner("Fetching live pricing data from market feeds & evaluating delta trends..."):
         try:
-            # 1. Ingest dataset from pipeline
+            # 1. Fetch raw matrix data from engine
             master_list = engine.fetch_master_list()
             processed_df = engine.process_daily_performance(master_list)
             
-            # 2. Match & Normalize "Trade Date" or "Date" column
+            # 2. Locate Trade Date column setup
             date_col_candidates = ["Trade Date", "Date", "trade_date", "date"]
             found_date_col = None
             for col in processed_df.columns:
@@ -78,24 +78,27 @@ if fetch_trigger:
                     found_date_col = col
                     break
             
-            if found_date_col:
-                # Standardize timestamps into pure comparable date formats
-                processed_df[found_date_col] = pd.to_datetime(processed_df[found_date_col]).dt.date
-                # Strictly isolate observations belonging to the specified End Date
-                processed_df = processed_df[processed_df[found_date_col] == end_date]
-
-            # 3. Handle Closing Price isolation
+            # 3. Explicitly extract the closing price on the "To Date" (End Date)
             close_col_candidates = ["Current Close", "Close", "Latest closing price (₹)", "Closing Price"]
             found_close_col = None
             for col in processed_df.columns:
                 if col in close_col_candidates or "close" in col.lower() or "price" in col.lower():
                     found_close_col = col
                     break
-            
-            if found_close_col:
-                processed_df["Latest closing price (₹)"] = pd.to_numeric(processed_df[found_close_col], errors='coerce')
+
+            if found_date_col and found_close_col:
+                processed_df[found_date_col] = pd.to_datetime(processed_df[found_date_col]).dt.date
+                
+                # Filter down the master frame data strictly to the End Date rows 
+                # This guarantees that the calculated closing values are from the "To Date" only
+                end_date_df = processed_df[processed_df[found_date_col] == end_date].copy()
+                end_date_df["Latest closing price (₹)"] = pd.to_numeric(end_date_df[found_close_col], errors='coerce')
+                processed_df = end_date_df
             else:
-                processed_df["Latest closing price (₹)"] = 0.0
+                if found_close_col:
+                    processed_df["Latest closing price (₹)"] = pd.to_numeric(processed_df[found_close_col], errors='coerce')
+                else:
+                    processed_df["Latest closing price (₹)"] = 0.0
 
             # 4. Harmonize "Price Change (+/-)" metrics
             if "Price Change (+/-)" not in processed_df.columns:
@@ -106,7 +109,7 @@ if fetch_trigger:
                 else:
                     processed_df["Price Change (+/-)"] = 0.0
 
-            # 5. Apply Numeric Value Bound Constraints
+            # 5. Apply Price Range Filter using End Date values
             processed_df = processed_df.dropna(subset=["Latest closing price (₹)"])
             processed_df = processed_df[
                 (processed_df["Latest closing price (₹)"] >= price_from) & 
@@ -114,14 +117,13 @@ if fetch_trigger:
             ]
 
             st.session_state.market_data = processed_df
-            st.success(f"Ingestion Finished! Extracted {len(processed_df)} records explicitly for Trade Date: {end_date}.")
+            st.success(f"Ingestion Finished! Extracted {len(processed_df)} records matching price conditions strictly on: {end_date}.")
             
-            # 6. Build PDF with the 5 explicit fields requested
+            # 6. Build PDF with the 5 explicit requested fields
             pdf_cols = ["NSE Ticker Symbol", "Company Name", "Latest closing price (₹)", "Direction", "Price Change (+/-)"]
             
             for target_col in pdf_cols:
                 if target_col not in processed_df.columns:
-                    # Inject safe defaults if column mapping missed structural field
                     if target_col == "NSE Ticker Symbol" and "Symbol" in processed_df.columns:
                         processed_df["NSE Ticker Symbol"] = processed_df["Symbol"]
                     else:
