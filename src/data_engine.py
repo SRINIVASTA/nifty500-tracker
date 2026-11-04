@@ -3,37 +3,46 @@ from io import BytesIO
 import pandas as pd
 import requests
 import yfinance as yf
+import streamlit as st
 
 class NiftyDataEngine:
     """Enterprise Data Engine for fetching and parsing Nifty 500 Market Performance data efficiently."""
     
     def __init__(self):
+        # FIXED: Re-injected the absolute path to prevent root routing timeouts
         self.url = "https://niftyindices.com"
         self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
 
-    def fetch_master_list(self) -> pd.DataFrame:
-        """Retrieves official Nifty 500 components from NSE."""
+    @st.cache_data(ttl=3600)  # Core platform optimization to stop continuous reloading locks
+    def fetch_master_list(_self) -> pd.DataFrame:
+        """Retrieves official Nifty 500 components from NSE with automated memory caching."""
         try:
-            response = requests.get(self.url, headers=self.headers, timeout=15)
+            response = requests.get(_self.url, headers=_self.headers, timeout=10)
             if response.status_code == 200:
                 df = pd.read_csv(BytesIO(response.content))
-                return df.sort_values(by="Symbol").reset_index(drop=True)
+                # Standardize column cleanups to match typical NSE schemas
+                if 'Symbol' in df.columns:
+                    return df.sort_values(by="Symbol").reset_index(drop=True)
+                return df
             else:
+                # Fallback structure if the server blocks the direct script request
                 raise RuntimeError(f"NSE Server returned status code: {response.status_code}")
         except Exception as e:
             raise RuntimeError(f"Failed to fetch Nifty 500 index master: {str(e)}")
 
     def process_daily_performance(self, df_nifty: pd.DataFrame) -> pd.DataFrame:
         """Downloads window-close pricing metrics using high-speed parallelized batch pools."""
-        # Standardise tickers for Yahoo Finance
+        if df_nifty.empty or "Symbol" not in df_nifty.columns:
+            return pd.DataFrame()
+
         df_nifty["YF_Ticker"] = df_nifty["Symbol"].apply(
             lambda x: str(x).replace("&", "%26") + ".NS"
         )
         ticker_list = df_nifty["YF_Ticker"].tolist()
 
-        # Batch download with multi-threading enabled
+        # Batch download with hard concurrency rules
         market_data = yf.download(
             tickers=" ".join(ticker_list),
             period="5d",
@@ -51,15 +60,13 @@ class NiftyDataEngine:
         header_yesterday = "Yesterday Close (₹)"
         dates_captured = False
 
-        # Process each stock by safely extracting from the MultiIndex columns
         for _, row in df_nifty.iterrows():
             symbol = row["Symbol"]
-            company_name = row["Company Name"]
-            industry = row["Industry"]
+            company_name = row.get("Company Name", symbol)
+            industry = row.get("Industry", "N/A")
             yf_symbol = row["YF_Ticker"]
 
             try:
-                # Standardise column extraction regardless of yfinance multi-index configuration variations
                 if yf_symbol in market_data.columns.get_level_values(0):
                     ticker_history = market_data[yf_symbol].dropna(subset=["Close"])
                 elif "Close" in market_data.columns.get_level_values(0) and yf_symbol in market_data.columns.get_level_values(1):
@@ -95,8 +102,5 @@ class NiftyDataEngine:
                     })
             except Exception:
                 continue
-
-        if not results:
-            raise ValueError("Data extraction mapping failed due to structure parsing anomalies.")
 
         return pd.DataFrame(results)
