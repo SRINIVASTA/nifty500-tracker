@@ -33,37 +33,40 @@ class NiftyDataEngine:
         )
         ticker_list = df_nifty["YF_Ticker"].tolist()
 
-        # OPTIMISATION 1: Pass tickers as a space-separated string with multi-threading enabled
-        # period="5d" ensures we capture enough sessions while keeping the data payload small
+        # Batch download with multi-threading enabled
         market_data = yf.download(
             tickers=" ".join(ticker_list),
             period="5d",
             group_by="ticker",
-            threads=True,       # Enable true multi-threading
+            threads=True,
             progress=False,
-            timeout=10          # Drop hanging connections fast
+            timeout=15
         )
+
+        if market_data.empty:
+            raise ValueError("No data returned from Yahoo Finance. Verify connectivity.")
 
         results = []
         header_day_before = "Day-Before-Yesterday Close (₹)"
         header_yesterday = "Yesterday Close (₹)"
         dates_captured = False
 
-        # OPTIMISATION 2: Cache columns to avoid slow multi-index lookups in the loop
-        available_tickers = set(market_data.columns.get_level_values(0))
-
+        # Process each stock by safely extracting from the MultiIndex columns
         for _, row in df_nifty.iterrows():
             symbol = row["Symbol"]
             company_name = row["Company Name"]
             industry = row["Industry"]
             yf_symbol = row["YF_Ticker"]
 
-            if yf_symbol not in available_tickers:
-                continue
-
             try:
-                # Fast extraction using pre-loaded sub-DataFrames
-                ticker_history = market_data[yf_symbol].dropna(subset=["Close"])
+                # Standardise column extraction regardless of yfinance multi-index configuration variations
+                if yf_symbol in market_data.columns.get_level_values(0):
+                    ticker_history = market_data[yf_symbol].dropna(subset=["Close"])
+                elif "Close" in market_data.columns.get_level_values(0) and yf_symbol in market_data.columns.get_level_values(1):
+                    ticker_history = market_data.xs(yf_symbol, axis=1, level=1).dropna(subset=["Close"])
+                else:
+                    continue
+
                 if len(ticker_history) >= 2:
                     if not dates_captured:
                         db_date = ticker_history.index[-2].strftime("%Y-%m-%d")
@@ -75,7 +78,6 @@ class NiftyDataEngine:
                     yesterday_close = float(ticker_history["Close"].iloc[-1])
                     day_before_close = float(ticker_history["Close"].iloc[-2])
 
-                    # Protection against division by zero errors
                     if day_before_close == 0:
                         continue
 
@@ -92,7 +94,9 @@ class NiftyDataEngine:
                         "Direction": direction
                     })
             except Exception:
-                # Silently bypass errors to keep processing speed optimal
                 continue
+
+        if not results:
+            raise ValueError("Data extraction mapping failed due to structure parsing anomalies.")
 
         return pd.DataFrame(results)
