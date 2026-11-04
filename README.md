@@ -63,7 +63,7 @@ graph TD
 
 ## 🚀 Local Network Initialization
 
-To spin up the server environment locally on port **`8506`**, execute the following sequence inside your project repository terminal:
+To spin up the server environment locally on port **`8501`**, execute the following sequence inside your project repository terminal:
 
 ### 1. Set Up Environment Variables
 Create a local folder named `.streamlit` and save your private relay endpoints inside `secrets.toml`:
@@ -74,11 +74,11 @@ Create a local folder named `.streamlit` and save your private relay endpoints i
 Run the platform using the explicit network flag to map the interface directly to port `8056`:
 
 ```bash
-streamlit run app.py --server.port 8056 --server.address localhost
+streamlit run app.py --server.port 8501 --server.address localhost
 ```
 
 Once executed, open your desktop browser and navigate to the live deployment link:
-🔗 **`http://localhost:8506`**
+🔗 **`http://localhost:8501`**
 
 ---
 
