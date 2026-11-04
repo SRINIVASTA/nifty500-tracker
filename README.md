@@ -1,6 +1,6 @@
 # 📊 Nifty 500 Market Performance Enterprise Workspace
 
-A production-grade Streamlit terminal engineered to map daily market trends across all 500 Nifty constituents. This application follows a strict **Verification-First structural framework**, ensuring you can inspect the base equity index layout on your desktop screen before compiling the ReportLab accounting ledger and initiating down-stream email operations via secure SMTP.
+A production-grade Streamlit terminal engineered to map daily market trends across all 500 Nifty constituents. This application follows a strict **Verification-First structural framework**, ensuring you can inspect the base equity index layout on your desktop screen before compiling the ReportLab accounting ledger and initiating downstream email operations via secure SMTP.
 
 ---
 
@@ -31,7 +31,7 @@ graph TD
     J & L -->|Step 4: Silent Dispatch| M[Dispatch PDF Report Button]
     M -->|Extract Context via TOML Secrets| N{st.secrets gmail}
     N -->|Route Secure TLS Packet| O(src/email_service.py)
-    O -->|Target Server: ://gmail.com| P[hisrinivas1972@gmail.com]
+    O -->|Target Server: smtp.gmail.com| P[hisrinivas1972@gmail.com]
 
     %% Class Styling for Clean UI Nodes
     style E fill:#e1f5fe,stroke:#03a9f4,stroke-width:2px;
@@ -54,7 +54,7 @@ Create a local folder named `.streamlit` and save your private relay endpoints i
 [gmail]
 username = "your-automated-system@gmail.com"
 app_password = "xxxx xxxx xxxx xxxx" # 16-digit Google App Password
-to_email = "***********@gmail.com"
+to_email = "hisrinivas1972@gmail.com"
 ```
 
 ### 2. Boot Up the Streamlit Core Server
