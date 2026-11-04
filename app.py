@@ -11,7 +11,7 @@ st.set_page_config(
     page_title="Nifty 500 Terminal", page_icon="📊", layout="wide"
 )
 
-# Instantiate the enterprise data engine
+# Instantiate the engine to handle data state transitions
 engine = NiftyDataEngine()
 
 if "market_data" not in st.session_state:
@@ -29,20 +29,17 @@ fetch_trigger = st.sidebar.button("Execute Live Ingestion", type="primary", use_
 st.sidebar.markdown("---")
 st.sidebar.header("📧 Document Delivery Terminal")
 
+# Fetch credentials and default recipients silently from secrets
 try:
     email_sender = st.secrets["gmail"]["username"]
     app_password = st.secrets["gmail"]["app_password"]
-    default_recipients = st.secrets["gmail"].get("to_email", "")
+    recipient_input = st.secrets["gmail"]["to_email"]
     secrets_loaded = True
 except KeyError:
     email_sender = ""
     app_password = ""
-    default_recipients = ""
+    recipient_input = ""
     secrets_loaded = False
-
-recipient_input = st.sidebar.text_input('To (Separate multiple with commas)', value=default_recipients, placeholder="exec1@firm.com, exec2@firm.com")
-custom_subject = st.sidebar.text_input('Subject', value="Automated Executive Briefing: Nifty 500 Market Matrix")
-custom_body = st.sidebar.text_area('Email Body Message', value="Team,\n\nPlease find attached the structured tracking ledger mapping the latest index deltas.")
 
 if not secrets_loaded:
     st.sidebar.error("⚠️ Credentials missing! Configure [gmail] entries in Streamlit Secrets.")
@@ -51,7 +48,7 @@ email_trigger = st.sidebar.button("Dispatch PDF Report", use_container_width=Tru
 
 # --- INGESTION CONTROLLER ENGINE ---
 if fetch_trigger:
-    with st.spinner("Fetching live pricing data from high-availability streams..."):
+    with st.spinner("Fetching live pricing data from market feeds & evaluating delta trends..."):
         try:
             master_list = engine.fetch_master_list()
             processed_df = engine.process_daily_performance(master_list)
@@ -59,7 +56,6 @@ if fetch_trigger:
             st.session_state.market_data = processed_df
             st.success(f"Live Ingestion Completed! Active coverage: {len(processed_df)} / 500 securities.")
             
-            # Generate the PDF matching the desktop tracking matrix schema immediately
             NiftyPDFGenerator.generate(processed_df, st.session_state.last_generated_pdf)
         except Exception as error:
             st.error(f"Pipeline Execution Aborted: {str(error)}")
@@ -70,14 +66,14 @@ if st.session_state.market_data is not None:
     is_live_feed = True
 else:
     try:
-        # Instantly pull the base template list on system initialization
         df = engine.fetch_master_list()
         is_live_feed = False
-    except Exception as init_error:
-        st.error(f"Failed to pre-populate index matrix layout: {str(init_error)}")
+    except Exception as initialization_error:
+        st.error(f"Failed to pre-populate index ledger: {str(initialization_error)}")
         df = pd.DataFrame()
         is_live_feed = False
 
+# Render the Desktop View Grid if data layout is verified
 if not df.empty:
     if is_live_feed:
         up_scrip = int((df["Direction"] == "Up").sum())
@@ -89,32 +85,28 @@ if not df.empty:
         kpi2.metric(label="Declining Markets (🔴)", value=down_scrip)
         kpi3.metric(label="Index Delta Mean", value=f"{avg_shift:+.2f}%")
     else:
-        st.warning("⚠️ Hub Pipeline Standby: Displaying corporate tracking framework. Click 'Execute Live Ingestion' to load currency closes.")
-
+        st.warning("⚠️ Hub Pipeline Standby: Displaying structural index tracking registry. Live metrics will map below after running execution pipeline.")
+    
     tab_grid, tab_analytics = st.tabs(["📋 Master Ledger Workspace", "📈 Cross-Sectional Analytics"])
     
     with tab_grid:
-        # Determine sorting keys and base columns dynamically
-        symbol_col = "NSE Ticker Symbol" if "NSE Ticker Symbol" in df.columns else "Symbol"
+        symbol_col = "NSE Ticker Symbol" if is_live_feed else "Symbol"
         
-        # In-line search filter context
         search_query = st.text_input("Filter Ledger (Symbol / Company Name)", key="matrix_search_filter")
         filtered_df = df
-        
         if search_query:
-            filtered_df = df[
-                df[symbol_col].str.contains(search_query, case=False) | 
-                df["Company Name"].str.contains(search_query, case=False)
-            ]
-        
-        # Render the tracking workspace grid with color formatting rules matching your PDF target
+            if symbol_col in df.columns and "Company Name" in df.columns:
+                filtered_df = df[
+                    df[symbol_col].str.contains(search_query, case=False) | 
+                    df["Company Name"].str.contains(search_query, case=False)
+                ]
+            
         if is_live_feed:
-            # Format absolute metrics into standard display strings safely
             formatted_df = filtered_df.copy()
             for col in formatted_df.columns:
                 if "Close" in col:
                     formatted_df[col] = formatted_df[col].apply(lambda x: f"₹{x:,.2f}")
-            
+                    
             st.dataframe(
                 formatted_df.style.map(
                     lambda val: "color: #00875A; font-weight: bold;" if val == "Up" else ("color: #DE350B; font-weight: bold;" if val == "Down" else ""),
@@ -125,7 +117,7 @@ if not df.empty:
             )
         else:
             st.dataframe(filtered_df[[symbol_col, "Company Name", "Industry"]], use_container_width=True, height=500)
-            
+        
         if is_live_feed and os.path.exists(st.session_state.last_generated_pdf):
             with open(st.session_state.last_generated_pdf, "rb") as file_bytes:
                 st.download_button(
@@ -156,23 +148,21 @@ if not df.empty:
 else:
     st.info("💡 Ingestion Hub Data Structure Empty. Please click 'Execute Live Ingestion' to build market state parameters manually.")
 
-# --- SECURE EMAIL DISPATCH SYSTEM ---
+# --- SECURE AUTOMATED EMAIL DISPATCH SYSTEM ---
 if email_trigger:
     if st.session_state.market_data is None:
         st.sidebar.error("❌ Data missing! Execute live ingestion first to compile the report data.")
-    elif not recipient_input:
-        st.sidebar.error("❌ Please enter at least one recipient email address.")
     else:
-        with st.spinner("Connecting to Gmail secure relays and distributing PDF reports..."):
+        with st.spinner("Connecting to secure relays and distributing PDF reports..."):
             try:
                 count = EnterpriseEmailService.send_report(
                     recipient_string=recipient_input,
                     attachment_path=st.session_state.last_generated_pdf,
                     sender_email=email_sender,
                     app_password=app_password,
-                    subject=custom_subject,
-                    body=custom_body
+                    subject="Automated Executive Briefing: Nifty 500 Market Matrix",
+                    body="Team,\n\nPlease find attached the structured tracking ledger mapping the latest index deltas."
                 )
-                st.sidebar.success(f"🚀 PDF Report successfully sent to {count} recipient(s)!")
+                st.sidebar.success(f"🚀 PDF Report successfully sent to your secure distribution list!")
             except Exception as email_error:
                 st.sidebar.error(f"Transmission Failed: {str(email_error)}")
