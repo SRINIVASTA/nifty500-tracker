@@ -26,12 +26,19 @@ st.markdown("Automated ingestion pipeline mapping tracking deltas with interacti
 # --- SIDEBAR RUNTIME PANEL ---
 st.sidebar.header("⚙️ Pipeline Execution Control")
 
-# Date inputs for historical or window-based tracking
+# Date Selection Panel
 col_d1, col_d2 = st.sidebar.columns(2)
 with col_d1:
     start_date = st.date_input("Start Date", datetime.today() - timedelta(days=1))
 with col_d2:
     end_date = st.date_input("End Date", datetime.today())
+
+# Price Ingestion Filter Panel (Moved to Sidebar under Dates)
+col_p1, col_p2 = st.sidebar.columns(2)
+with col_p1:
+    price_from = st.number_input("Price From (₹)", min_value=0.0, value=0.0, step=50.0)
+with col_p2:
+    price_to = st.number_input("Price To (₹)", min_value=0.0, value=100000.0, step=50.0)
 
 fetch_trigger = st.sidebar.button("Execute Live Ingestion", type="primary", use_container_width=True)
 
@@ -59,7 +66,7 @@ email_trigger = st.sidebar.button("Dispatch PDF Report", use_container_width=Tru
 if fetch_trigger:
     with st.spinner("Fetching live pricing data from market feeds & evaluating delta trends..."):
         try:
-            # Passing selected dates to the data engine if supported
+            # Fetch and process pipeline parameters
             master_list = engine.fetch_master_list()
             processed_df = engine.process_daily_performance(master_list)
             
@@ -85,16 +92,24 @@ else:
 
 # Render the Desktop View Grid if data layout is verified
 if not df.empty:
+    # Ensure structural metric transformation maps strictly to price change units
+    if "Price Change (+/-)" not in df.columns and "Price Change" in df.columns:
+        df["Price Change (+/-)"] = df["Price Change"]
+    elif "Price Change (+/-)" not in df.columns and "% Change" in df.columns:
+        df["Price Change (+/-)"] = df["% Change"]
+        
+    # Apply Sidebar Price Filter directly to the functional master frame
+    filtered_df = df.copy()
+    if is_live_feed and "Current Close" in filtered_df.columns:
+        filtered_df = filtered_df[
+            (filtered_df["Current Close"] >= price_from) & 
+            (filtered_df["Current Close"] <= price_to)
+        ]
+
     if is_live_feed:
-        # Fallback calculation if the engine doesn't explicitly rename the column yet
-        if "Price Change (+/-)" not in df.columns and "Price Change" in df.columns:
-            df["Price Change (+/-)"] = df["Price Change"]
-        elif "Price Change (+/-)" not in df.columns and "% Change" in df.columns:
-            df["Price Change (+/-)"] = df["% Change"] # Maps structural data if raw delta column name varies
-            
-        up_scrip = int((df["Direction"] == "Up").sum())
-        down_scrip = int((df["Direction"] == "Down").sum())
-        avg_shift = float(df["Price Change (+/-)"].mean())
+        up_scrip = int((filtered_df["Direction"] == "Up").sum())
+        down_scrip = int((filtered_df["Direction"] == "Down").sum())
+        avg_shift = float(filtered_df["Price Change (+/-)"].mean()) if not filtered_df.empty else 0.0
         
         kpi1, kpi2, kpi3 = st.columns(3)
         kpi1.metric(label="Advancing Markets (🟢)", value=up_scrip)
@@ -108,33 +123,7 @@ if not df.empty:
     with tab_grid:
         symbol_col = "NSE Ticker Symbol" if is_live_feed else "Symbol"
         
-        # Filter Layout Controls
-        filter_col1, filter_col2, filter_col3 = st.columns([2, 1, 1])
-        
-        with filter_col1:
-            search_query = st.text_input("Filter Ledger (Symbol / Company Name)", key="matrix_search_filter")
-        
-        filtered_df = df.copy()
-        
-        # Price From and To Filters
-        if is_live_feed and "Current Close" in filtered_df.columns:
-            min_p = float(df["Current Close"].min())
-            max_p = float(df["Current Close"].max())
-            with filter_col2:
-                price_from = st.number_input("Price From (₹)", min_value=0.0, max_value=max_p, value=0.0)
-            with filter_col3:
-                price_to = st.number_input("Price To (₹)", min_value=0.0, max_value=max_p * 10, value=max_p)
-            
-            filtered_df = filtered_df[
-                (filtered_df["Current Close"] >= price_from) & 
-                (filtered_df["Current Close"] <= price_to)
-            ]
-        else:
-            with filter_col2:
-                st.number_input("Price From (₹)", disabled=True, key="disabled_from")
-            with filter_col3:
-                st.number_input("Price To (₹)", disabled=True, key="disabled_to")
-
+        search_query = st.text_input("Filter Ledger (Symbol / Company Name)", key="matrix_search_filter")
         if search_query:
             if symbol_col in filtered_df.columns and "Company Name" in filtered_df.columns:
                 filtered_df = filtered_df[
@@ -173,20 +162,23 @@ if not df.empty:
                 
     with tab_analytics:
         if is_live_feed:
-            col_vis1, col_vis2 = st.columns(2)
-            with col_vis1:
-                st.subheader("Market Breadth Allocation")
-                fig_pie = px.pie(df, names="Direction", color="Direction", 
-                                 color_discrete_map={"Up": "#00875A", "Down": "#DE350B"}, hole=0.4)
-                st.plotly_chart(fig_pie, use_container_width=True)
-                
-            with col_vis2:
-                st.subheader("Top Performers (Extreme Ends)")
-                sorted_df = df.sort_values(by="Price Change (+/-)")
-                top_performers = pd.concat([sorted_df.head(5), sorted_df.tail(5)])
-                fig_bar = px.bar(top_performers, x="Price Change (+/-)", y="NSE Ticker Symbol", orientation="h",
-                                 color="Direction", color_discrete_map={"Up": "#00875A", "Down": "#DE350B"})
-                st.plotly_chart(fig_bar, use_container_width=True)
+            if not filtered_df.empty:
+                col_vis1, col_vis2 = st.columns(2)
+                with col_vis1:
+                    st.subheader("Market Breadth Allocation")
+                    fig_pie = px.pie(filtered_df, names="Direction", color="Direction", 
+                                     color_discrete_map={"Up": "#00875A", "Down": "#DE350B"}, hole=0.4)
+                    st.plotly_chart(fig_pie, use_container_width=True)
+                    
+                with col_vis2:
+                    st.subheader("Top Performers (Extreme Ends)")
+                    sorted_df = filtered_df.sort_values(by="Price Change (+/-)")
+                    top_performers = pd.concat([sorted_df.head(5), sorted_df.tail(5)]).drop_duplicates()
+                    fig_bar = px.bar(top_performers, x="Price Change (+/-)", y="NSE Ticker Symbol", orientation="h",
+                                     color="Direction", color_discrete_map={"Up": "#00875A", "Down": "#DE350B"})
+                    st.plotly_chart(fig_bar, use_container_width=True)
+            else:
+                st.info("No data matches the selected price scope to display charts.")
         else:
             st.info("📈 Analytics Engine Offline. Cross-sectional charts will plot here once market streaming data finishes processing.")
 else:
