@@ -9,28 +9,42 @@ class NiftyDataEngine:
     """Enterprise Data Engine for fetching and parsing Nifty 500 Market Performance data efficiently."""
     
     def __init__(self):
-        # FIXED: Re-injected the absolute path to prevent root routing timeouts
+        # Using the direct, permanent CSV link path to minimize structural routing drops
         self.url = "https://niftyindices.com"
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
 
-    @st.cache_data(ttl=3600)  # Core platform optimization to stop continuous reloading locks
+    @st.cache_data(ttl=3600)
     def fetch_master_list(_self) -> pd.DataFrame:
-        """Retrieves official Nifty 500 components from NSE with automated memory caching."""
+        """Retrieves official Nifty 500 components from NSE with automated error bypassing."""
         try:
-            response = requests.get(_self.url, headers=_self.headers, timeout=10)
+            response = requests.get(_self.url, headers=_self.headers, timeout=12)
             if response.status_code == 200:
-                df = pd.read_csv(BytesIO(response.content))
-                # Standardize column cleanups to match typical NSE schemas
+                # OPTIMIZATION: added on_bad_lines='skip' to bypass structural tokens mismatches safely
+                df = pd.read_csv(BytesIO(response.content), on_bad_lines='skip')
+                
+                # Check for column schema alignment, clean extra whitespaces from string names
+                df.columns = df.columns.str.strip()
+                
                 if 'Symbol' in df.columns:
                     return df.sort_values(by="Symbol").reset_index(drop=True)
-                return df
+                else:
+                    raise KeyError("Required tracking key 'Symbol' not found in server response payload.")
             else:
-                # Fallback structure if the server blocks the direct script request
                 raise RuntimeError(f"NSE Server returned status code: {response.status_code}")
+                
         except Exception as e:
-            raise RuntimeError(f"Failed to fetch Nifty 500 index master: {str(e)}")
+            # FALLBACK RUNTIME SUBSYSTEM: Loads a clean structural matrix if the network stream breaks
+            st.warning("⚠️ Primary server stream interrupted. Deploying static structural matrix backup...")
+            fallback_url = "https://githubusercontent.com"
+            try:
+                response = requests.get(fallback_url, timeout=10)
+                df = pd.read_csv(BytesIO(response.content), on_bad_lines='skip')
+                df.columns = df.columns.str.strip()
+                return df.sort_values(by="Symbol").reset_index(drop=True)
+            except Exception:
+                raise RuntimeError(f"All structural ingest pathways exhausted. Technical source exception: {str(e)}")
 
     def process_daily_performance(self, df_nifty: pd.DataFrame) -> pd.DataFrame:
         """Downloads window-close pricing metrics using high-speed parallelized batch pools."""
@@ -38,11 +52,10 @@ class NiftyDataEngine:
             return pd.DataFrame()
 
         df_nifty["YF_Ticker"] = df_nifty["Symbol"].apply(
-            lambda x: str(x).replace("&", "%26") + ".NS"
+            lambda x: str(x).replace("&", "%26").strip() + ".NS"
         )
         ticker_list = df_nifty["YF_Ticker"].tolist()
 
-        # Batch download with hard concurrency rules
         market_data = yf.download(
             tickers=" ".join(ticker_list),
             period="5d",
