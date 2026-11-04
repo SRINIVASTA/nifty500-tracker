@@ -66,20 +66,25 @@ email_trigger = st.sidebar.button("Dispatch PDF Report", use_container_width=Tru
 if fetch_trigger:
     with st.spinner("Fetching live pricing data from market feeds & evaluating delta trends..."):
         try:
-            # 1. Fetch raw data matrix from engine
+            # 1. Ingest dataset from pipeline
             master_list = engine.fetch_master_list()
             processed_df = engine.process_daily_performance(master_list)
             
-            # 2. Strict Date Alignment: Pin pricing explicitly to the chosen End Date row
-            # Looks for date columns to isolate the end date performance metric
-            date_cols = [c for c in processed_df.columns if "date" in c.lower()]
-            if date_cols:
-                target_date_col = date_cols[0]
-                processed_df[target_date_col] = pd.to_datetime(processed_df[target_date_col]).dt.date
-                # Filter down strictly to the End Date row profile
-                processed_df = processed_df[processed_df[target_date_col] == end_date]
+            # 2. Match & Normalize "Trade Date" or "Date" column
+            date_col_candidates = ["Trade Date", "Date", "trade_date", "date"]
+            found_date_col = None
+            for col in processed_df.columns:
+                if col in date_col_candidates or "date" in col.lower():
+                    found_date_col = col
+                    break
             
-            # 3. Target "Latest closing price (₹)" extraction & numeric conversion
+            if found_date_col:
+                # Standardize timestamps into pure comparable date formats
+                processed_df[found_date_col] = pd.to_datetime(processed_df[found_date_col]).dt.date
+                # Strictly isolate observations belonging to the specified End Date
+                processed_df = processed_df[processed_df[found_date_col] == end_date]
+
+            # 3. Handle Closing Price isolation
             close_col_candidates = ["Current Close", "Close", "Latest closing price (₹)", "Closing Price"]
             found_close_col = None
             for col in processed_df.columns:
@@ -92,7 +97,7 @@ if fetch_trigger:
             else:
                 processed_df["Latest closing price (₹)"] = 0.0
 
-            # 4. Harmonize "Price Change (+/-)" column name mapping
+            # 4. Harmonize "Price Change (+/-)" metrics
             if "Price Change (+/-)" not in processed_df.columns:
                 if "Price Change" in processed_df.columns:
                     processed_df["Price Change (+/-)"] = processed_df["Price Change"]
@@ -101,7 +106,7 @@ if fetch_trigger:
                 else:
                     processed_df["Price Change (+/-)"] = 0.0
 
-            # 5. Strict Numeric Price Range Filtering Execution
+            # 5. Apply Numeric Value Bound Constraints
             processed_df = processed_df.dropna(subset=["Latest closing price (₹)"])
             processed_df = processed_df[
                 (processed_df["Latest closing price (₹)"] >= price_from) & 
@@ -109,21 +114,24 @@ if fetch_trigger:
             ]
 
             st.session_state.market_data = processed_df
-            st.success(f"Live Ingestion Completed! Target Date: {end_date} | Matches: {len(processed_df)} securities.")
+            st.success(f"Ingestion Finished! Extracted {len(processed_df)} records explicitly for Trade Date: {end_date}.")
             
-            # 6. Generate PDF compiling ONLY the requested columns
+            # 6. Build PDF with the 5 explicit fields requested
             pdf_cols = ["NSE Ticker Symbol", "Company Name", "Latest closing price (₹)", "Direction", "Price Change (+/-)"]
             
             for target_col in pdf_cols:
                 if target_col not in processed_df.columns:
-                    processed_df[target_col] = "N/A"
+                    # Inject safe defaults if column mapping missed structural field
+                    if target_col == "NSE Ticker Symbol" and "Symbol" in processed_df.columns:
+                        processed_df["NSE Ticker Symbol"] = processed_df["Symbol"]
+                    else:
+                        processed_df[target_col] = "N/A"
                     
             pdf_export_df = processed_df[pdf_cols]
             NiftyPDFGenerator.generate(pdf_export_df, st.session_state.last_generated_pdf)
             
         except Exception as error:
             st.error(f"Pipeline Execution Aborted: {str(error)}")
-
 # --- VISUAL CONTROL DESK: MASTER WORKSPACE ENTRY ---
 if st.session_state.market_data is not None:
     filtered_df = st.session_state.market_data
@@ -238,4 +246,3 @@ if email_trigger:
                 st.sidebar.success(f"🚀 PDF Report successfully sent to your secure distribution list!")
             except Exception as email_error:
                 st.sidebar.error(f"Transmission Failed: {str(email_error)}")
-
