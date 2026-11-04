@@ -11,7 +11,7 @@ class NiftyDataEngine:
     def __init__(self):
         # Local relative track layout
         self.local_path = os.path.join("data", "ind_nifty500list.csv")
-        # Live web tracking fallback slug
+        # Live web tracking fallback slug pointing directly to the raw CSV stream
         self.url = "https://niftyindices.com"
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
