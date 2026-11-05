@@ -2,9 +2,9 @@ name: Scheduled Market Data Pipeline
 
 on:
   schedule:
-    # Trigger at 12:55 PM UTC, which corresponds exactly to 6:25 PM IST today
-    - cron: '55 12 * * 1-5'
-  workflow_dispatch: # Enables manual testing trigger inside GitHub Actions
+    # Trigger at 1:15 PM UTC, which corresponds exactly to 6:45 PM IST
+    - cron: '15 13 * * 1-5'
+  workflow_dispatch: # Keeps your manual "Run workflow" button active
 
 jobs:
   run-pipeline:
