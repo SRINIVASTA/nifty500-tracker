@@ -69,7 +69,6 @@ class NiftyDataEngine:
         )
         ticker_list = df_nifty["YF_Ticker"].tolist()
 
-        # pad start_date and end_date by a few days to guarantee data availability over weekends/holidays
         padded_start = start_dt - timedelta(days=5)
         padded_end = end_dt + timedelta(days=5)
 
@@ -108,10 +107,8 @@ class NiftyDataEngine:
                 if ticker_history.empty:
                     continue
 
-                # Filter down the individual history strictly to user parameters
                 range_history = ticker_history.loc[start_dt.strftime("%Y-%m-%d"):end_dt.strftime("%Y-%m-%d")]
                 
-                # If range boundary falls on a holiday/weekend, fallback to closest available inside padded frame
                 if range_history.empty:
                     before_range = ticker_history.loc[:end_dt.strftime("%Y-%m-%d")]
                     if before_range.empty:
@@ -119,7 +116,6 @@ class NiftyDataEngine:
                     range_history = before_range.tail(2)
 
                 if len(range_history) >= 1:
-                    # Isolate exact starting points and ending points inside the user's date range
                     start_close = float(range_history["Close"].iloc[0])
                     end_close = float(range_history["Close"].iloc[-1])
 
@@ -133,8 +129,9 @@ class NiftyDataEngine:
                     if start_close == 0:
                         continue
 
-                    pct_change = ((end_close - start_close) / start_close) * 100
-                    direction = "Up" if pct_change >= 0 else "Down"
+                    # Calculate absolute price difference delta instead of percentage return
+                    absolute_price_change = end_close - start_close
+                    direction = "Up" if absolute_price_change >= 0 else "Down"
 
                     results.append({
                         "NSE Ticker Symbol": symbol,
@@ -142,7 +139,7 @@ class NiftyDataEngine:
                         "Industry": industry,
                         header_start_date: round(start_close, 2),
                         header_end_date: round(end_close, 2),
-                        "% Change": round(pct_change, 2),
+                        "Price Change": round(absolute_price_change, 2),
                         "Direction": direction
                     })
             except Exception:
