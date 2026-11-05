@@ -67,7 +67,7 @@ if fetch_trigger:
         with st.spinner("Fetching live pricing data from market feeds & evaluating delta trends..."):
             try:
                 master_list = engine.fetch_master_list()
-                processed_df = engine.process_daily_performance(master_list)
+                processed_df = engine.process_daily_performance(master_list, start_date, end_date)
                 
                 # Note: To fully support historical 'Start Date' and 'End Date' overrides on yfinance, 
                 # you would update the period parameters inside your src/data_engine.py file.
