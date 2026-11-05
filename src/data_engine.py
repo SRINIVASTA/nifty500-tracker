@@ -4,15 +4,14 @@ import pandas as pd
 import requests
 import yfinance as yf
 import streamlit as st
+from datetime import date, timedelta
 
 class NiftyDataEngine:
     """Enterprise Data Engine for fetching and parsing Nifty 500 Market Performance data efficiently."""
     
     def __init__(self):
         self.local_path = os.path.join("data", "ind_nifty500list.csv")
-        # Direct archive download string (Primary endpoint with stricter anti-bot firewall rules)
-        self.url = "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv"
-        # Mirror network endpoint (Bypasses 403 HTTP restrictions completely)
+        self.url = "https://nseindia.com"
         self.mirror_url = "https://githubusercontent.com"
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -22,7 +21,6 @@ class NiftyDataEngine:
     @st.cache_data(ttl=3600)
     def fetch_master_list(_self) -> pd.DataFrame:
         """Retrieves Nifty 500 components, prioritizing high-speed local files, fallback mirrors, and live network arrays."""
-        # PATHWAY 1: High-Speed Enterprise Local Repository Reading
         if os.path.exists(_self.local_path):
             try:
                 df = pd.read_csv(_self.local_path, on_bad_lines='skip')
@@ -32,14 +30,12 @@ class NiftyDataEngine:
             except Exception as local_err:
                 st.warning(f"⚠️ Local repository file read anomaly: {local_err}. Falling back to high-availability network streams...")
 
-        # PATHWAY 2: High-Availability Mirror Fallback Network (Solves 403 Forbidden exceptions)
         try:
             response = requests.get(_self.mirror_url, timeout=10)
             if response.status_code == 200 and not response.text.strip().startswith("<!DOCTYPE"):
                 df = pd.read_csv(BytesIO(response.content), on_bad_lines='skip')
                 df.columns = df.columns.str.strip()
                 if 'Symbol' in df.columns:
-                    # Silently persist matrix locally to populate desktop view instantaneously next boot
                     try:
                         os.makedirs(os.path.dirname(_self.local_path), exist_ok=True)
                         df.to_csv(_self.local_path, index=False)
@@ -49,11 +45,9 @@ class NiftyDataEngine:
         except Exception:
             pass
 
-        # PATHWAY 3: Live Primary NSE Server Network Stream Connection
         try:
             response = requests.get(_self.url, headers=_self.headers, timeout=10)
             if response.status_code == 200:
-                # Confirm we didn't ingest an error or captcha wall page disguised as a text payload
                 if response.text.strip().startswith("<!DOCTYPE") or "html" in response.text.lower():
                     raise RuntimeError("Server returned HTML firewall block page instead of structured data matrix.")
                 df = pd.read_csv(BytesIO(response.content), on_bad_lines='skip')
@@ -65,8 +59,8 @@ class NiftyDataEngine:
         except Exception as e:
             raise RuntimeError(f"All structural ingest pathways exhausted. Technical source exception: {str(e)}")
 
-    def process_daily_performance(self, df_nifty: pd.DataFrame) -> pd.DataFrame:
-        """Downloads window-close pricing metrics using high-speed parallelized batch pools."""
+    def process_daily_performance(self, df_nifty: pd.DataFrame, start_dt: date, end_dt: date) -> pd.DataFrame:
+        """Downloads window pricing metrics across explicit historical target date ranges."""
         if df_nifty.empty or "Symbol" not in df_nifty.columns:
             return pd.DataFrame()
 
@@ -75,22 +69,27 @@ class NiftyDataEngine:
         )
         ticker_list = df_nifty["YF_Ticker"].tolist()
 
+        # pad start_date and end_date by a few days to guarantee data availability over weekends/holidays
+        padded_start = start_dt - timedelta(days=5)
+        padded_end = end_dt + timedelta(days=5)
+
         market_data = yf.download(
             tickers=" ".join(ticker_list),
-            period="5d",
+            start=padded_start.strftime("%Y-%m-%d"),
+            end=padded_end.strftime("%Y-%m-%d"),
             group_by="ticker",
             threads=True,
             progress=False,
-            timeout=20
+            timeout=25
         )
 
         if market_data.empty:
-            raise ValueError("No data returned from Yahoo Finance. Verify connectivity.")
+            raise ValueError("No data returned from Yahoo Finance. Verify active internet connection and dates.")
 
         results = []
-        header_day_before = "Day-Before-Yesterday Close (₹)"
-        header_yesterday = "Yesterday Close (₹)"
         dates_captured = False
+        header_start_date = "Startdate Close (₹)"
+        header_end_date = "Enddate Close Price"
 
         for _, row in df_nifty.iterrows():
             symbol = row["Symbol"]
@@ -106,29 +105,43 @@ class NiftyDataEngine:
                 else:
                     continue
 
-                if len(ticker_history) >= 2:
+                if ticker_history.empty:
+                    continue
+
+                # Filter down the individual history strictly to user parameters
+                range_history = ticker_history.loc[start_dt.strftime("%Y-%m-%d"):end_dt.strftime("%Y-%m-%d")]
+                
+                # If range boundary falls on a holiday/weekend, fallback to closest available inside padded frame
+                if range_history.empty:
+                    before_range = ticker_history.loc[:end_dt.strftime("%Y-%m-%d")]
+                    if before_range.empty:
+                        continue
+                    range_history = before_range.tail(2)
+
+                if len(range_history) >= 1:
+                    # Isolate exact starting points and ending points inside the user's date range
+                    start_close = float(range_history["Close"].iloc[0])
+                    end_close = float(range_history["Close"].iloc[-1])
+
                     if not dates_captured:
-                        db_date = ticker_history.index[-2].strftime("%Y-%m-%d")
-                        y_date = ticker_history.index[-1].strftime("%Y-%m-%d")
-                        header_day_before = f"Close ({db_date}) (₹)"
-                        header_yesterday = f"Close ({y_date}) (₹)"
+                        actual_start_str = range_history.index[0].strftime("%Y-%m-%d")
+                        actual_end_str = range_history.index[-1].strftime("%Y-%m-%d")
+                        header_start_date = f"Close ({actual_start_str}) (₹)"
+                        header_end_date = f"Close ({actual_end_str}) (₹)"
                         dates_captured = True
 
-                    yesterday_close = float(ticker_history["Close"].iloc[-1])
-                    day_before_close = float(ticker_history["Close"].iloc[-2])
-
-                    if day_before_close == 0:
+                    if start_close == 0:
                         continue
 
-                    pct_change = ((yesterday_close - day_before_close) / day_before_close) * 100
+                    pct_change = ((end_close - start_close) / start_close) * 100
                     direction = "Up" if pct_change >= 0 else "Down"
 
                     results.append({
                         "NSE Ticker Symbol": symbol,
                         "Company Name": company_name,
                         "Industry": industry,
-                        header_day_before: round(day_before_close, 2),
-                        header_yesterday: round(yesterday_close, 2),
+                        header_start_date: round(start_close, 2),
+                        header_end_date: round(end_close, 2),
                         "% Change": round(pct_change, 2),
                         "Direction": direction
                     })
