@@ -2,8 +2,8 @@ name: Scheduled Market Data Pipeline
 
 on:
   schedule:
-    # Trigger at 1:15 PM UTC, which corresponds exactly to 6:45 PM IST
-    - cron: '15 13 * * 1-5'
+    # Trigger at 1:30 PM UTC, which corresponds exactly to 7:00 PM IST today
+    - cron: '30 13 * * 1-5'
   workflow_dispatch: # Keeps your manual "Run workflow" button active
 
 jobs:
