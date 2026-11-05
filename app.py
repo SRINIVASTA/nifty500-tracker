@@ -12,7 +12,6 @@ st.set_page_config(
     page_title="Nifty 500 Terminal", page_icon="📊", layout="wide"
 )
 
-# Instantiate the engine to handle data state transitions
 engine = NiftyDataEngine()
 
 if "market_data" not in st.session_state:
@@ -21,12 +20,11 @@ if "last_generated_pdf" not in st.session_state:
     st.session_state.last_generated_pdf = "Nifty500_Filtered_Report.pdf"
 
 st.title("📊 Nifty 500 Market Performance Enterprise Workspace")
-st.markdown("Automated ingestion pipeline mapping tracking deltas with interactive cross-sectional analysis dashboards.")
+st.markdown("Automated ingestion pipeline mapping tracking deltas with interactive absolute price variance analysis dashboards.")
 
 # --- SIDEBAR RUNTIME PANEL ---
 st.sidebar.header("⚙️ Pipeline Execution Control")
 
-# 1. Custom Date & Price Range Filter Blocks
 st.sidebar.subheader("📅 Date Horizon Filters")
 start_date = st.sidebar.date_input("Start Date", value=date(2026, 11, 1))
 end_date = st.sidebar.date_input("End Date", value=date(2026, 11, 5))
@@ -40,7 +38,6 @@ fetch_trigger = st.sidebar.button("Execute Live Ingestion", type="primary", use_
 st.sidebar.markdown("---")
 st.sidebar.header("📧 Document Delivery Terminal")
 
-# Fetch credentials and default recipients silently from secrets
 try:
     email_sender = st.secrets["gmail"]["username"]
     app_password = st.secrets["gmail"]["app_password"]
@@ -64,13 +61,10 @@ if fetch_trigger:
     elif price_from > price_to:
         st.error("❌ Pipeline Aborted: 'Price From' threshold cannot exceed 'Price To' threshold.")
     else:
-        with st.spinner("Fetching live pricing data from market feeds & evaluating delta trends..."):
+        with st.spinner("Fetching live pricing data from market feeds & evaluating absolute deltas..."):
             try:
                 master_list = engine.fetch_master_list()
                 processed_df = engine.process_daily_performance(master_list, start_date, end_date)
-                
-                # Note: To fully support historical 'Start Date' and 'End Date' overrides on yfinance, 
-                # you would update the period parameters inside your src/data_engine.py file.
                 
                 st.session_state.market_data = processed_df
                 st.success(f"Live Ingestion Completed! Active base coverage: {len(processed_df)} securities.")
@@ -82,11 +76,9 @@ if st.session_state.market_data is not None:
     df = st.session_state.market_data.copy()
     is_live_feed = True
     
-    # Locate the active ending date price column string dynamically from data layout
     yesterday_col = [c for c in df.columns if "Close (" in c]
     active_close_col = yesterday_col[-1] if yesterday_col else None
     
-    # 2. Apply the Runway Multi-Step Filter Pruning Logic Inline
     if active_close_col and not df.empty:
         df = df[(df[active_close_col] >= price_from) & (df[active_close_col] <= price_to)]
 else:
@@ -103,14 +95,13 @@ if not df.empty:
     if is_live_feed:
         up_scrip = int((df["Direction"] == "Up").sum())
         down_scrip = int((df["Direction"] == "Down").sum())
-        avg_shift = float(df["% Change"].mean()) if len(df) > 0 else 0.0
+        avg_shift = float(df["Price Change"].mean()) if len(df) > 0 else 0.0
         
         kpi1, kpi2, kpi3 = st.columns(3)
         kpi1.metric(label="Advancing Markets (🟢)", value=up_scrip)
         kpi2.metric(label="Declining Markets (🔴)", value=down_scrip)
-        kpi3.metric(label="Index Delta Mean", value=f"{avg_shift:+.2f}%")
+        kpi3.metric(label="Index Price Delta Mean", value=f"₹{avg_shift:+.2f}")
         
-        # Compile and generate the filtered PDF on the fly based on active data state
         NiftyPDFGenerator.generate(df, st.session_state.last_generated_pdf)
     else:
         st.warning("⚠️ Hub Pipeline Standby: Displaying structural index tracking registry. Live metrics will map below after running execution pipeline.")
@@ -130,21 +121,18 @@ if not df.empty:
                 ]
             
         if is_live_feed:
-            # Re-map matrix column layout structural view to mirror exactly what prints inside the final PDF
-            final_columns_view = [symbol_col, "Company Name", active_close_col, "% Change", "Direction"]
+            final_columns_view = [symbol_col, "Company Name", active_close_col, "Price Change", "Direction"]
             formatted_df = filtered_df[final_columns_view].copy()
             
-            # Formatted column header translations for UI uniformity matching PDF output instructions
             formatted_df = formatted_df.rename(columns={
                 active_close_col: "Enddate Close Price",
-                "% Change": "Price Change",
                 "Direction": "up/down"
             })
             
             st.dataframe(
                 formatted_df.style.format({
                     "Enddate Close Price": "₹{:,.2f}",
-                    "Price Change": "{:+.2f}%"
+                    "Price Change": "₹{:+.2f}"
                 }).map(
                     lambda val: "color: #00875A; font-weight: bold;" if val == "Up" else ("color: #DE350B; font-weight: bold;" if val == "Down" else ""),
                     subset=["up/down"]
@@ -175,10 +163,10 @@ if not df.empty:
                     st.plotly_chart(fig_pie, use_container_width=True)
                     
                 with col_vis2:
-                    st.subheader("Top Performers (Extreme Ends)")
-                    sorted_df = df.sort_values(by="% Change")
+                    st.subheader("Top Performers (By Absolute Rupee Change)")
+                    sorted_df = df.sort_values(by="Price Change")
                     top_performers = pd.concat([sorted_df.head(5), sorted_df.tail(5)]).drop_duplicates()
-                    fig_bar = px.bar(top_performers, x="% Change", y="NSE Ticker Symbol", orientation="h",
+                    fig_bar = px.bar(top_performers, x="Price Change", y="NSE Ticker Symbol", orientation="h",
                                      color="Direction", color_discrete_map={"Up": "#00875A", "Down": "#DE350B"})
                     st.plotly_chart(fig_bar, use_container_width=True)
             else:
@@ -200,8 +188,8 @@ if email_trigger:
                     attachment_path=st.session_state.last_generated_pdf,
                     sender_email=email_sender,
                     app_password=app_password,
-                    subject="Automated Executive Briefing: Filtered Nifty 500 Matrix",
-                    body=f"Team,\n\nPlease find attached the filtered structural tracking ledger matching your parameter criteria.\n\nFilters Applied:\n- Price Range: ₹{price_from:,.2f} to ₹{price_to:,.2f}\n- Target Tracking Interval: {start_date} to {end_date}"
+                    subject="Automated Executive Briefing: Absolute Variance Matrix",
+                    body=f"Team,\n\nPlease find attached the filtered structural tracking ledger mapping absolute rupee movements.\n\nFilters Applied:\n- Price Range: ₹{price_from:,.2f} to ₹{price_to:,.2f}\n- Target Tracking Interval: {start_date} to {end_date}"
                 )
                 st.sidebar.success(f"🚀 Filtered PDF Report successfully sent to your secure distribution list!")
             except Exception as email_error:
