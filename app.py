@@ -26,7 +26,7 @@ st.markdown("Automated ingestion pipeline mapping tracking deltas with interacti
 st.sidebar.header("⚙️ Pipeline Execution Control")
 
 st.sidebar.subheader("📅 Date Horizon Filters")
-start_date = st.sidebar.date_input("Start Date", value=date(2026, 11, 1))
+start_date = st.sidebar.date_input("Start Date", value=date(2026, 11, 2))
 end_date = st.sidebar.date_input("End Date", value=date(2026, 11, 5))
 
 st.sidebar.subheader("💰 Valuation Matrix Range")
@@ -79,23 +79,27 @@ if st.session_state.market_data is not None:
     yesterday_col = [c for c in df.columns if "Close (" in c]
     active_close_col = yesterday_col[-1] if yesterday_col else None
     
+    # Apply valuation filters to live runtime data
     if active_close_col and not df.empty:
         df = df[(df[active_close_col] >= price_from) & (df[active_close_col] <= price_to)]
 else:
     try:
         df = engine.fetch_master_list()
         is_live_feed = False
+        active_close_col = None
     except Exception as initialization_error:
         st.error(f"Failed to pre-populate index ledger: {str(initialization_error)}")
         df = pd.DataFrame()
         is_live_feed = False
+        active_close_col = None
 
-# Render the Desktop View Grid if data layout is verified
+# Render Visual Ledger Workspace
 if not df.empty:
     if is_live_feed:
-        up_scrip = int((df["Direction"] == "Up").sum())
-        down_scrip = int((df["Direction"] == "Down").sum())
-        avg_shift = float(df["Price Change"].mean()) if len(df) > 0 else 0.0
+        # Secure KPI calculation logic executing safely only on live incoming data streams
+        up_scrip = int((df["Direction"] == "Up").sum()) if "Direction" in df.columns else 0
+        down_scrip = int((df["Direction"] == "Down").sum()) if "Direction" in df.columns else 0
+        avg_shift = float(df["Price Change"].mean()) if ("Price Change" in df.columns and len(df) > 0) else 0.0
         
         kpi1, kpi2, kpi3 = st.columns(3)
         kpi1.metric(label="Advancing Markets (🟢)", value=up_scrip)
@@ -120,28 +124,37 @@ if not df.empty:
                     df["Company Name"].str.contains(search_query, case=False)
                 ]
             
-        if is_live_feed:
+        if is_live_feed and active_close_col:
             final_columns_view = [symbol_col, "Company Name", active_close_col, "Price Change", "Direction"]
+            # Filter layout views to avoid key errors if certain columns fail to generate
+            final_columns_view = [c for c in final_columns_view if c in filtered_df.columns]
+            
             formatted_df = filtered_df[final_columns_view].copy()
             
-            formatted_df = formatted_df.rename(columns={
-                active_close_col: "Enddate Close Price",
-                "Direction": "up/down"
-            })
+            if active_close_col in formatted_df.columns:
+                formatted_df = formatted_df.rename(columns={active_close_col: "Enddate Close Price"})
+            if "Direction" in formatted_df.columns:
+                formatted_df = formatted_df.rename(columns={"Direction": "up/down"})
             
+            # Format UI rendering columns selectively
+            format_rules = {}
+            if "Enddate Close Price" in formatted_df.columns:
+                format_rules["Enddate Close Price"] = "₹{:,.2f}"
+            if "Price Change" in formatted_df.columns:
+                format_rules["Price Change"] = "₹{:+.2f}"
+                
             st.dataframe(
-                formatted_df.style.format({
-                    "Enddate Close Price": "₹{:,.2f}",
-                    "Price Change": "₹{:+.2f}"
-                }).map(
+                formatted_df.style.format(format_rules).map(
                     lambda val: "color: #00875A; font-weight: bold;" if val == "Up" else ("color: #DE350B; font-weight: bold;" if val == "Down" else ""),
-                    subset=["up/down"]
+                    subset=["up/down"] if "up/down" in formatted_df.columns else []
                 ),
                 use_container_width=True,
                 height=500
             )
         else:
-            st.dataframe(filtered_df[[symbol_col, "Company Name", "Industry"]], use_container_width=True, height=500)
+            # Standby mode grid layout rules
+            avail_cols = [c for c in [symbol_col, "Company Name", "Industry"] if c in filtered_df.columns]
+            st.dataframe(filtered_df[avail_cols], use_container_width=True, height=500)
         
         if is_live_feed and os.path.exists(st.session_state.last_generated_pdf):
             with open(st.session_state.last_generated_pdf, "rb") as file_bytes:
@@ -154,7 +167,7 @@ if not df.empty:
                 
     with tab_analytics:
         if is_live_feed:
-            if not df.empty:
+            if not df.empty and "Direction" in df.columns and "Price Change" in df.columns:
                 col_vis1, col_vis2 = st.columns(2)
                 with col_vis1:
                     st.subheader("Market Breadth Allocation")
@@ -166,7 +179,7 @@ if not df.empty:
                     st.subheader("Top Performers (By Absolute Rupee Change)")
                     sorted_df = df.sort_values(by="Price Change")
                     top_performers = pd.concat([sorted_df.head(5), sorted_df.tail(5)]).drop_duplicates()
-                    fig_bar = px.bar(top_performers, x="Price Change", y="NSE Ticker Symbol", orientation="h",
+                    fig_bar = px.bar(top_performers, x="Price Change", y="NSE Ticker Symbol" if "NSE Ticker Symbol" in top_performers.columns else df.columns[0], orientation="h",
                                      color="Direction", color_discrete_map={"Up": "#00875A", "Down": "#DE350B"})
                     st.plotly_chart(fig_bar, use_container_width=True)
             else:
