@@ -1,0 +1,30 @@
+name: Scheduled Market Data Pipeline
+
+on:
+  schedule:
+    # Trigger at 12:55 PM UTC, which corresponds exactly to 6:25 PM IST today
+    - cron: '55 12 * * 1-5'
+  workflow_dispatch: # Enables manual testing trigger inside GitHub Actions
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository Code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install toml
+
+    - name: Execute Ingestion Engine
+      run: python cron_job.py
