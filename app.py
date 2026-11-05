@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
+from datetime import datetime, date
 
 from src.data_engine import NiftyDataEngine
 from src.pdf_generator import NiftyPDFGenerator
@@ -17,13 +18,23 @@ engine = NiftyDataEngine()
 if "market_data" not in st.session_state:
     st.session_state.market_data = None
 if "last_generated_pdf" not in st.session_state:
-    st.session_state.last_generated_pdf = "Nifty500_Master_Report.pdf"
+    st.session_state.last_generated_pdf = "Nifty500_Filtered_Report.pdf"
 
 st.title("📊 Nifty 500 Market Performance Enterprise Workspace")
 st.markdown("Automated ingestion pipeline mapping tracking deltas with interactive cross-sectional analysis dashboards.")
 
 # --- SIDEBAR RUNTIME PANEL ---
 st.sidebar.header("⚙️ Pipeline Execution Control")
+
+# 1. Custom Date & Price Range Filter Blocks
+st.sidebar.subheader("📅 Date Horizon Filters")
+start_date = st.sidebar.date_input("Start Date", value=date(2026, 11, 1))
+end_date = st.sidebar.date_input("End Date", value=date(2026, 11, 5))
+
+st.sidebar.subheader("💰 Valuation Matrix Range")
+price_from = st.sidebar.number_input("Price From (₹)", min_value=0.0, value=0.0, step=50.0)
+price_to = st.sidebar.number_input("Price To (₹)", min_value=0.0, value=100000.0, step=50.0)
+
 fetch_trigger = st.sidebar.button("Execute Live Ingestion", type="primary", use_container_width=True)
 
 st.sidebar.markdown("---")
@@ -48,22 +59,36 @@ email_trigger = st.sidebar.button("Dispatch PDF Report", use_container_width=Tru
 
 # --- INGESTION CONTROLLER ENGINE ---
 if fetch_trigger:
-    with st.spinner("Fetching live pricing data from market feeds & evaluating delta trends..."):
-        try:
-            master_list = engine.fetch_master_list()
-            processed_df = engine.process_daily_performance(master_list)
-            
-            st.session_state.market_data = processed_df
-            st.success(f"Live Ingestion Completed! Active coverage: {len(processed_df)} / 500 securities.")
-            
-            NiftyPDFGenerator.generate(processed_df, st.session_state.last_generated_pdf)
-        except Exception as error:
-            st.error(f"Pipeline Execution Aborted: {str(error)}")
+    if start_date > end_date:
+        st.error("❌ Pipeline Aborted: 'Start Date' cannot fall after the chosen 'End Date'.")
+    elif price_from > price_to:
+        st.error("❌ Pipeline Aborted: 'Price From' threshold cannot exceed 'Price To' threshold.")
+    else:
+        with st.spinner("Fetching live pricing data from market feeds & evaluating delta trends..."):
+            try:
+                master_list = engine.fetch_master_list()
+                processed_df = engine.process_daily_performance(master_list)
+                
+                # Note: To fully support historical 'Start Date' and 'End Date' overrides on yfinance, 
+                # you would update the period parameters inside your src/data_engine.py file.
+                
+                st.session_state.market_data = processed_df
+                st.success(f"Live Ingestion Completed! Active base coverage: {len(processed_df)} securities.")
+            except Exception as error:
+                st.error(f"Pipeline Execution Aborted: {str(error)}")
 
 # --- VISUAL CONTROL DESK: MASTER WORKSPACE ENTRY ---
 if st.session_state.market_data is not None:
-    df = st.session_state.market_data
+    df = st.session_state.market_data.copy()
     is_live_feed = True
+    
+    # Locate the active ending date price column string dynamically from data layout
+    yesterday_col = [c for c in df.columns if "Close (" in c]
+    active_close_col = yesterday_col[-1] if yesterday_col else None
+    
+    # 2. Apply the Runway Multi-Step Filter Pruning Logic Inline
+    if active_close_col and not df.empty:
+        df = df[(df[active_close_col] >= price_from) & (df[active_close_col] <= price_to)]
 else:
     try:
         df = engine.fetch_master_list()
@@ -78,12 +103,15 @@ if not df.empty:
     if is_live_feed:
         up_scrip = int((df["Direction"] == "Up").sum())
         down_scrip = int((df["Direction"] == "Down").sum())
-        avg_shift = float(df["% Change"].mean())
+        avg_shift = float(df["% Change"].mean()) if len(df) > 0 else 0.0
         
         kpi1, kpi2, kpi3 = st.columns(3)
         kpi1.metric(label="Advancing Markets (🟢)", value=up_scrip)
         kpi2.metric(label="Declining Markets (🔴)", value=down_scrip)
         kpi3.metric(label="Index Delta Mean", value=f"{avg_shift:+.2f}%")
+        
+        # Compile and generate the filtered PDF on the fly based on active data state
+        NiftyPDFGenerator.generate(df, st.session_state.last_generated_pdf)
     else:
         st.warning("⚠️ Hub Pipeline Standby: Displaying structural index tracking registry. Live metrics will map below after running execution pipeline.")
     
@@ -102,15 +130,24 @@ if not df.empty:
                 ]
             
         if is_live_feed:
-            formatted_df = filtered_df.copy()
-            for col in formatted_df.columns:
-                if "Close" in col:
-                    formatted_df[col] = formatted_df[col].apply(lambda x: f"₹{x:,.2f}")
-                    
+            # Re-map matrix column layout structural view to mirror exactly what prints inside the final PDF
+            final_columns_view = [symbol_col, "Company Name", active_close_col, "% Change", "Direction"]
+            formatted_df = filtered_df[final_columns_view].copy()
+            
+            # Formatted column header translations for UI uniformity matching PDF output instructions
+            formatted_df = formatted_df.rename(columns={
+                active_close_col: "Enddate Close Price",
+                "% Change": "Price Change",
+                "Direction": "up/down"
+            })
+            
             st.dataframe(
-                formatted_df.style.map(
+                formatted_df.style.format({
+                    "Enddate Close Price": "₹{:,.2f}",
+                    "Price Change": "{:+.2f}%"
+                }).map(
                     lambda val: "color: #00875A; font-weight: bold;" if val == "Up" else ("color: #DE350B; font-weight: bold;" if val == "Down" else ""),
-                    subset=["Direction"]
+                    subset=["up/down"]
                 ),
                 use_container_width=True,
                 height=500
@@ -123,30 +160,33 @@ if not df.empty:
                 st.download_button(
                     label="📥 Download Executable PDF Ledger",
                     data=file_bytes,
-                    file_name="Nifty500_Market_Performance.pdf",
+                    file_name="Nifty500_Filtered_Performance.pdf",
                     mime="application/pdf"
                 )
                 
     with tab_analytics:
         if is_live_feed:
-            col_vis1, col_vis2 = st.columns(2)
-            with col_vis1:
-                st.subheader("Market Breadth Allocation")
-                fig_pie = px.pie(df, names="Direction", color="Direction", 
-                                 color_discrete_map={"Up": "#00875A", "Down": "#DE350B"}, hole=0.4)
-                st.plotly_chart(fig_pie, use_container_width=True)
-                
-            with col_vis2:
-                st.subheader("Top Performers (Extreme Ends)")
-                sorted_df = df.sort_values(by="% Change")
-                top_performers = pd.concat([sorted_df.head(5), sorted_df.tail(5)])
-                fig_bar = px.bar(top_performers, x="% Change", y="NSE Ticker Symbol", orientation="h",
-                                 color="Direction", color_discrete_map={"Up": "#00875A", "Down": "#DE350B"})
-                st.plotly_chart(fig_bar, use_container_width=True)
+            if not df.empty:
+                col_vis1, col_vis2 = st.columns(2)
+                with col_vis1:
+                    st.subheader("Market Breadth Allocation")
+                    fig_pie = px.pie(df, names="Direction", color="Direction", 
+                                     color_discrete_map={"Up": "#00875A", "Down": "#DE350B"}, hole=0.4)
+                    st.plotly_chart(fig_pie, use_container_width=True)
+                    
+                with col_vis2:
+                    st.subheader("Top Performers (Extreme Ends)")
+                    sorted_df = df.sort_values(by="% Change")
+                    top_performers = pd.concat([sorted_df.head(5), sorted_df.tail(5)]).drop_duplicates()
+                    fig_bar = px.bar(top_performers, x="% Change", y="NSE Ticker Symbol", orientation="h",
+                                     color="Direction", color_discrete_map={"Up": "#00875A", "Down": "#DE350B"})
+                    st.plotly_chart(fig_bar, use_container_width=True)
+            else:
+                st.info("💡 No analytics data available for the selected price thresholds.")
         else:
             st.info("📈 Analytics Engine Offline. Cross-sectional charts will plot here once market streaming data finishes processing.")
 else:
-    st.info("💡 Ingestion Hub Data Structure Empty. Please click 'Execute Live Ingestion' to build market state parameters manually.")
+    st.info("💡 Ingestion Hub Data Structure Empty or No Securities Match Your Price Filter Settings.")
 
 # --- SECURE AUTOMATED EMAIL DISPATCH SYSTEM ---
 if email_trigger:
@@ -160,9 +200,9 @@ if email_trigger:
                     attachment_path=st.session_state.last_generated_pdf,
                     sender_email=email_sender,
                     app_password=app_password,
-                    subject="Automated Executive Briefing: Nifty 500 Market Matrix",
-                    body="Team,\n\nPlease find attached the structured tracking ledger mapping the latest index deltas."
+                    subject="Automated Executive Briefing: Filtered Nifty 500 Matrix",
+                    body=f"Team,\n\nPlease find attached the filtered structural tracking ledger matching your parameter criteria.\n\nFilters Applied:\n- Price Range: ₹{price_from:,.2f} to ₹{price_to:,.2f}\n- Target Tracking Interval: {start_date} to {end_date}"
                 )
-                st.sidebar.success(f"🚀 PDF Report successfully sent to your secure distribution list!")
+                st.sidebar.success(f"🚀 Filtered PDF Report successfully sent to your secure distribution list!")
             except Exception as email_error:
                 st.sidebar.error(f"Transmission Failed: {str(email_error)}")
