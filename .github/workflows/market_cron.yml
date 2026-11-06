@@ -28,3 +28,8 @@ jobs:
 
     - name: Execute Ingestion Engine
       run: python cron_job.py
+      env:
+        # 🔐 This maps GitHub's secure vault values safely to your Python runtime variables
+        username: ${{ secrets.EMAIL_USERNAME }}
+        app_password: ${{ secrets.EMAIL_APP_PASSWORD }}
+        to_email: ${{ secrets.EMAIL_TO }}
