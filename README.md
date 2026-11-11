@@ -6,7 +6,7 @@ A production-grade Streamlit terminal engineered to map daily market trends acro
 
 ## 📂 System Architecture Repository Tree
 
-```unset
+```text
 nifty500-market-matrix/
 ├── .streamlit/
 │   └── secrets.toml          # Encrypted enterprise credentials & target email storage
@@ -17,7 +17,7 @@ nifty500-market-matrix/
 │   ├── data_engine.py        # Core processing matrix bypassing firewall blocks (yfinance)
 │   ├── email_service.py      # Secure SMTP distribution layer targeting port 587
 │   └── pdf_generator.py      # Production ReportLab engine drafting landscape documents
-├── app.py                    # Streamlit interface executing port 8056 runtimes
+├── app.py                    # Streamlit interface executing port 8501 runtimes
 └── README.md                 # System operational manual with structural Mermaid diagrams
 ```
 
@@ -26,31 +26,52 @@ nifty500-market-matrix/
 ## 🛠️ Architecture & Core Components
 
 ```mermaid
-graph TD
+flowchart TD
     %% Base Infrastructure Load
-    A[app.py Platform Boot] -->|Step 1: On-Init Standby| B(src/data_engine.py: fetch_master_list)
-    B -->|Pathway 1: Relative Disk| C{data/ind_nifty500list.csv}
-    B -->|Pathway 2: High-Availability Mirror| D[Raw GitHub CDN Stream]
+    A[app.py Platform Boot] e1@-->|Step 1: On-Init Standby| B(src/data_engine.py: fetch_master_list)
+    B e2@-->|Pathway 1: Relative Disk| C{data/ind_nifty500list.csv}
+    B e3@-->|Pathway 2: High-Availability Mirror| D[Raw GitHub CDN Stream]
     
     %% Desktop Interface Rendering
-    C & D -->|Populate Data Frame| E[📋 Master Ledger Workspace]
-    E -->|Interactive Desktop View| F[User Verification Review Phase]
+    C e4@-->|Populate Data Frame| E[📋 Master Ledger Workspace]
+    D e5@-->|Populate Data Frame| E
+    E e6@-->|Interactive Desktop View| F[User Verification Review Phase]
     
     %% Live Processing Ingestion Execution
-    F -->|Step 2: Trigger Action| G[Execute Live Ingestion Button]
-    G -->|Parallel Batch Pooling| H(yfinance Multi-Thread Engine)
-    H -->|Download 5d Pricing Windows| I[Calculate Closes & % Deltas]
+    F e7@-->|Step 2: Trigger Action| G[Execute Live Ingestion Button]
+    G e8@-->|Parallel Batch Pooling| H(yfinance Multi-Thread Engine)
+    H e9@-->|Download 5d Pricing Windows| I[Calculate Closes & % Deltas]
     
     %% Downstream Document Output
-    I -->|Step 3: Render Metrics| J[Update Grid + Activate Charts]
-    I -->|Auto-Compile Binaries| K(src/pdf_generator.py)
-    K -->|Build Landscape Multi-Page Ledger| L[Nifty500_Master_Report.pdf]
+    I e10@-->|Step 3: Render Metrics| J[Update Grid + Activate Charts]
+    I e11@-->|Auto-Compile Binaries| K(src/pdf_generator.py)
+    K e12@-->|Build Landscape Multi-Page Ledger| L[Nifty500_Master_Report.pdf]
     
     %% Secure Transmission Route
-    J & L -->|Step 4: Silent Dispatch| M[Dispatch PDF Report Button]
-    M -->|Extract Context via TOML Secrets| N{st.secrets gmail}
-    N -->|Route Secure TLS Packet| O(src/email_service.py)
-    O -->|Target Server: smtp.gmail.com| P["********@gmail.com"]
+    J e13@-->|Step 4: Silent Dispatch| M[Dispatch PDF Report Button]
+    L e14@-->|Step 4: Silent Dispatch| M
+    M e15@-->|Extract Context via TOML Secrets| N{st.secrets gmail}
+    N e16@-->|Route Secure TLS Packet| O(src/email_service.py)
+    O e17@-->|Target Server: smtp.gmail.com| P["********@gmail.com"]
+
+    %% Running Flow Animation Definitions
+    e1@{ animate: true }
+    e2@{ animate: true }
+    e3@{ animate: true }
+    e4@{ animate: true }
+    e5@{ animate: true }
+    e6@{ animate: true }
+    e7@{ animate: true }
+    e8@{ animate: true }
+    e9@{ animate: true }
+    e10@{ animate: true }
+    e11@{ animate: true }
+    e12@{ animate: true }
+    e13@{ animate: true }
+    e14@{ animate: true }
+    e15@{ animate: true }
+    e16@{ animate: true }
+    e17@{ animate: true }
 
     %% Class Styling for Clean UI Nodes
     style E fill:#e1f5fe,stroke:#03a9f4,stroke-width:2px;
@@ -68,6 +89,11 @@ To spin up the server environment locally on port **`8501`**, execute the follow
 ### 1. Set Up Environment Variables
 Create a local folder named `.streamlit` and save your private relay endpoints inside `secrets.toml`:
 
+```toml
+[gmail]
+sender_email = "your-sender@gmail.com"
+app_password = "your-16-char-app-password"
+recipient_email = "********@gmail.com"
 ```
 
 ### 2. Boot Up the Streamlit Core Server
