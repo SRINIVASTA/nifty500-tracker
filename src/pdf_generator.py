@@ -131,7 +131,8 @@ class NiftyPDFGenerator:
                 row_data.append(Paragraph(val, c_style))
             table_data.append(row_data)
 
-        col_widths =
+        # Exact grid width mapping matching Portrait bounds (Summing to 552 points)
+        col_widths = [90, 175, 120, 97, 70]
 
         perf_table = Table(table_data, colWidths=col_widths, repeatRows=1)
         perf_table.setStyle(
