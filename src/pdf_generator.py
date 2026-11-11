@@ -1,5 +1,4 @@
 import os
-import matplotlib
 import pandas as pd
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, portrait
@@ -8,15 +7,34 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-# Locate DejaVuSans bundled with Matplotlib (works cross-platform without extra downloads)
-font_dir = os.path.join(os.path.dirname(matplotlib.__file__), "mpl-data", "fonts", "ttf")
-pdfmetrics.registerFont(TTFont("DejaVuSans", os.path.join(font_dir, "DejaVuSans.ttf")))
-pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", os.path.join(font_dir, "DejaVuSans-Bold.ttf")))
-pdfmetrics.registerFontFamily(
-    "DejaVuSans",
-    normal="DejaVuSans",
-    bold="DejaVuSans-Bold",
-)
+
+def _register_unicode_fonts() -> tuple[str, str]:
+    """Locate and register DejaVuSans on Linux (Streamlit Cloud) or Windows/Mac."""
+    candidate_dirs = [
+        "/usr/share/fonts/truetype/dejavu",           # Debian/Ubuntu (Streamlit Cloud)
+        "/usr/share/fonts/dejavu",                    # Fedora/RHEL
+        "C:/Windows/Fonts",                           # Windows fallback
+        "/Library/Fonts",                             # macOS fallback
+    ]
+
+    for font_dir in candidate_dirs:
+        regular_path = os.path.join(font_dir, "DejaVuSans.ttf")
+        bold_path = os.path.join(font_dir, "DejaVuSans-Bold.ttf")
+        if os.path.exists(regular_path) and os.path.exists(bold_path):
+            pdfmetrics.registerFont(TTFont("DejaVuSans", regular_path))
+            pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", bold_path))
+            pdfmetrics.registerFontFamily(
+                "DejaVuSans",
+                normal="DejaVuSans",
+                bold="DejaVuSans-Bold",
+            )
+            return "DejaVuSans", "DejaVuSans-Bold"
+
+    return "Helvetica", "Helvetica-Bold"
+
+
+REGULAR_FONT, BOLD_FONT = _register_unicode_fonts()
+
 
 class NiftyPDFGenerator:
     """Production ReportLab engine generating highly formatted accounting ledgers."""
@@ -36,7 +54,7 @@ class NiftyPDFGenerator:
         title_style = ParagraphStyle(
             "DocTitle",
             parent=styles["Heading1"],
-            fontName="DejaVuSans-Bold",
+            fontName=BOLD_FONT,
             fontSize=15,
             leading=20,
             textColor=colors.HexColor("#1A2B4C"),
@@ -45,7 +63,7 @@ class NiftyPDFGenerator:
         cell_style = ParagraphStyle(
             "TableCell",
             parent=styles["Normal"],
-            fontName="DejaVuSans",
+            fontName=REGULAR_FONT,
             fontSize=8.5,
             leading=11,
             textColor=colors.HexColor("#333333"),
@@ -53,7 +71,7 @@ class NiftyPDFGenerator:
         header_style = ParagraphStyle(
             "TableHeader",
             parent=styles["Normal"],
-            fontName="DejaVuSans-Bold",
+            fontName=BOLD_FONT,
             fontSize=9,
             leading=12,
             textColor=colors.white,
@@ -69,8 +87,11 @@ class NiftyPDFGenerator:
 
         target_cols = ["NSE Ticker Symbol", "Company Name", yesterday_header, "Price Change", "Direction"]
         display_headers = ["NSE Ticker Symbol", "Company Name", "Enddate Close Price", "Price Change", "up/down"]
-        
+
         table_data = [[Paragraph(h, header_style) for h in display_headers]]
+
+        # Swap to "Rs." automatically if Unicode font wasn't found on the host
+        currency_prefix = "₹" if REGULAR_FONT == "DejaVuSans" else "Rs. "
 
         for _, row in df.iterrows():
             row_data = []
@@ -81,33 +102,37 @@ class NiftyPDFGenerator:
                 else:
                     val = str(row[original_col])
                     c_style = cell_style
-                    
+
                     if original_col == "Price Change":
                         try:
                             num_val = float(row[original_col])
                             val = f"{num_val:+.2f}"
-                            val = val.replace("+", "+₹").replace("-", "-₹")
+                            val = val.replace("+", f"+{currency_prefix}").replace("-", f"-{currency_prefix}")
                         except ValueError:
                             pass
                         color = "#00875A" if row["Direction"] == "Up" else "#DE350B"
-                        c_style = ParagraphStyle("DeltaColor", parent=cell_style, textColor=colors.HexColor(color), fontName="DejaVuSans-Bold")
-                    
+                        c_style = ParagraphStyle(
+                            "DeltaColor", parent=cell_style, textColor=colors.HexColor(color), fontName=BOLD_FONT
+                        )
+
                     elif original_col == "Direction":
                         val = "▲ Up" if row[original_col] == "Up" else "▼ Down"
                         color = "#00875A" if row[original_col] == "Up" else "#DE350B"
-                        c_style = ParagraphStyle("DirColor", parent=cell_style, textColor=colors.HexColor(color), fontName="DejaVuSans-Bold")
-                        
+                        c_style = ParagraphStyle(
+                            "DirColor", parent=cell_style, textColor=colors.HexColor(color), fontName=BOLD_FONT
+                        )
+
                     elif "Close" in original_col or "₹" in original_col:
                         try:
-                            val = f"₹{float(row[original_col]):,.2f}"
+                            val = f"{currency_prefix}{float(row[original_col]):,.2f}"
                         except ValueError:
                             pass
 
                 row_data.append(Paragraph(val, c_style))
             table_data.append(row_data)
 
-        col_widths = [90, 175, 120, 97, 70]
-        
+        col_widths =
+
         perf_table = Table(table_data, colWidths=col_widths, repeatRows=1)
         perf_table.setStyle(
             TableStyle(
