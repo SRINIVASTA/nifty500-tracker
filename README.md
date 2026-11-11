@@ -86,17 +86,8 @@ flowchart TD
 
 To spin up the server environment locally on port **`8501`**, execute the following sequence inside your project repository terminal:
 
-### 1. Set Up Environment Variables
-Create a local folder named `.streamlit` and save your private relay endpoints inside `secrets.toml`:
 
-```toml
-[gmail]
-sender_email = "your-sender@gmail.com"
-app_password = "your-16-char-app-password"
-recipient_email = "********@gmail.com"
-```
-
-### 2. Boot Up the Streamlit Core Server
+### Boot Up the Streamlit Core Server
 Run the platform using the explicit network flag to map the interface directly to port `8501`:
 
 ```bash
