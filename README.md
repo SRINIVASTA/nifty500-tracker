@@ -2,6 +2,10 @@
 
 A production-grade Streamlit terminal engineered to map daily market trends across all 500 Nifty constituents. This application follows a strict **Verification-First structural framework**, ensuring you can inspect the base equity index layout on your desktop screen before compiling the ReportLab accounting ledger and initiating downstream email operations via secure SMTP.
 
+## About
+Production-grade **Autonomous Financial Data Agent Workspace** built with **Streamlit** for **Nifty 500** constituents with automated reporting and data ingestion capabilities.
+
+
 <img src="assets/desktop.png" width="100%" alt="Desktop Preview">
 
 ---
