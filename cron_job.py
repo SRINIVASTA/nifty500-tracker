@@ -3,10 +3,13 @@ import os
 import sys
 import logging
 from datetime import date, timedelta
+from pathlib import Path
 
 from src.data_engine import NiftyDataEngine
 from src.pdf_generator import NiftyPDFGenerator
 from src.email_service import EnterpriseEmailService
+
+SECRETS_PATH = Path(__file__).resolve().parent / ".streamlit" / "secrets.toml"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,43 +20,35 @@ logging.basicConfig(
     ]
 )
 
-def _load_credentials() -> tuple[str, str, str]:
-    """Read credentials from GitHub Actions env vars first, then fallback to local secrets.toml."""
-    sender = os.getenv("EMAIL_USERNAME", "").strip()
-    password = os.getenv("EMAIL_APP_PASSWORD", "").strip()
-    recipients = os.getenv("EMAIL_TO", "").strip()
+def _load_smtp_credentials() -> tuple[str, str, str]:
+    """Exact same credential loader from Global Exchange: GitHub Secrets first, then secrets.toml."""
+    sender = os.getenv("USERNAME") or os.getenv("EMAIL_USERNAME") or ""
+    password = os.getenv("APP_PASSWORD") or os.getenv("EMAIL_APP_PASSWORD") or ""
+    recipients = os.getenv("TO_EMAIL") or os.getenv("EMAIL_TO") or ""
 
-    if sender and password and recipients:
-        logging.info("✓ Credentials loaded from environment variables.")
-        return sender, password, recipients
+    if (not sender or not password or not recipients) and SECRETS_PATH.exists():
+        import toml
+        secrets = toml.load(SECRETS_PATH)
+        cfg = secrets.get("gmail", secrets)
+        sender = sender or str(cfg.get("username", cfg.get("sender_email", "")))
+        password = password or str(cfg.get("app_password", ""))
+        raw_to = recipients or cfg.get("to_email", cfg.get("recipients", ""))
+        if isinstance(raw_to, list):
+            recipients = ", ".join(str(r).strip() for r in raw_to if str(r).strip())
+        else:
+            recipients = str(raw_to)
 
-    secrets_path = os.path.join(".streamlit", "secrets.toml")
-    if os.path.exists(secrets_path):
-        try:
-            import toml
-            secrets = toml.load(secrets_path)
-            sender = sender or str(secrets["gmail"].get("username", "")).strip()
-            password = password or str(secrets["gmail"].get("app_password", "")).strip()
-            raw_to = recipients or secrets["gmail"].get("to_email", "")
-            if isinstance(raw_to, list):
-                recipients = ", ".join(str(r).strip() for r in raw_to if str(r).strip())
-            else:
-                recipients = str(raw_to).strip()
-            logging.info("✓ Credentials loaded from local Streamlit secrets file.")
-        except Exception as err:
-            logging.error(f"❌ Failed to parse secrets.toml: {err}")
-
-    return sender, password, recipients
+    return sender.strip(), password.strip(), recipients.strip()
 
 def run_unattended_pipeline():
-    logging.info("🚀 Initializing Streamlit-Linked Market Matrix Pipeline...")
+    logging.info("🚀 Initializing Nifty 500 Market Matrix Pipeline...")
 
     end_date = date.today()
     start_date = end_date - timedelta(days=3)
 
-    sender_email, app_password, recipient_list = _load_credentials()
+    sender_email, app_password, recipient_list = _load_smtp_credentials()
     if not (sender_email and app_password and recipient_list):
-        logging.error("❌ Aborted: Missing SMTP credentials in both GitHub Secrets and secrets.toml.")
+        logging.error("❌ Aborted: SMTP credentials not found in GitHub Secrets or secrets.toml.")
         sys.exit(1)
 
     output_pdf = "Nifty500_Automated_Briefing.pdf"
@@ -62,17 +57,17 @@ def run_unattended_pipeline():
         engine = NiftyDataEngine()
         master_list = engine.fetch_master_list()
 
-        logging.info(f"Evaluating absolute price changes from {start_date} to {end_date}...")
+        logging.info(f"Evaluating price changes from {start_date} to {end_date}...")
         processed_df = engine.process_daily_performance(master_list, start_date, end_date)
 
         if processed_df.empty:
             logging.error("❌ Data Engine returned an empty matrix payload.")
             sys.exit(1)
 
-        logging.info(f"Compiling portrait tracking layout rules into: '{output_pdf}'...")
+        logging.info(f"Compiling PDF report into: '{output_pdf}'...")
         NiftyPDFGenerator.generate(processed_df, output_pdf)
 
-        logging.info("Connecting to secure relays and distributing PDF reports...")
+        logging.info("Distributing PDF reports via email...")
         total_sent = EnterpriseEmailService.send_report(
             recipient_string=recipient_list,
             attachment_path=output_pdf,
