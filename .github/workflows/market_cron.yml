@@ -2,33 +2,30 @@ name: Scheduled Market Data Pipeline
 
 on:
   schedule:
-    - cron: '30 11 * * 1-5' # Runs Monday to Friday at 11:30 AM UTC (5:00 PM IST)
+    - cron: "30 11 * * 1-5" # Runs Monday to Friday at 11:30 UTC (5:00 PM IST)
   workflow_dispatch:
 
 jobs:
   run-pipeline:
     runs-on: ubuntu-24.04
-
     steps:
-      - name: Checkout Repository Code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python Environment
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: "3.11"
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install -r requirements.txt
           pip install toml
 
-      - name: Execute Ingestion Engine
-        run: python cron_job.py
+      - name: Run headless ingestion & email dispatch
         env:
           PYTHONPATH: .
-          EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}
-          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
-          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          USERNAME: ${{ secrets.USERNAME }}
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          TO_EMAIL: ${{ secrets.TO_EMAIL }}
+        run: python cron_job.py
