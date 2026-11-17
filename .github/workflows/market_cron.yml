@@ -2,8 +2,11 @@ name: Scheduled Market Data Pipeline
 
 on:
   schedule:
-    - cron: "30 11 * * 1-5" # Runs Monday to Friday at 11:30 UTC (5:00 PM IST)
+    - cron: "30 11 * * 2-5" # Runs Tuesday to Friday at 11:30 UTC (5:00 PM IST)
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   run-pipeline:
@@ -29,3 +32,11 @@ jobs:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
           TO_EMAIL: ${{ secrets.TO_EMAIL }}
         run: python cron_job.py
+
+      - name: Keep workflow active (commit log)
+        run: |
+          git config --local user.email "github-actions[bot]@://github.com"
+          git config --local user.name "github-actions[bot]"
+          git add pipeline_automation.log
+          git diff --quiet && git diff --staged --quiet || git commit -m "chore: update automation log"
+          git push
