@@ -5,6 +5,7 @@ A production-grade Streamlit terminal engineered to map daily market trends acro
 ## About
 Production-grade **Autonomous Financial Data Agent Workspace** built with **Streamlit** for **Nifty 500** constituents with automated reporting and data ingestion capabilities.
 
+## ⭐ Show Your Support
 If you like the UI design, dual-mode system architecture, or automated financial data engineering behind **Nifty 500 Market Performance Enterprise Workspace**, please consider giving this repository a **Star ⭐** on GitHub! It helps showcase this work and motivates future builds.
 
 
