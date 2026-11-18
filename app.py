@@ -39,18 +39,25 @@ st.sidebar.markdown("---")
 st.sidebar.header("📧 Document Delivery Terminal")
 
 try:
-    email_sender = st.secrets["gmail"]["username"]
-    app_password = st.secrets["gmail"]["app_password"]
-    recipient_input = st.secrets["gmail"]["to_email"]
-    secrets_loaded = True
-except KeyError:
+    email_sender = str(st.secrets["gmail"]["username"]).strip()
+    app_password = str(st.secrets["gmail"]["app_password"]).strip()
+    raw_recipients = st.secrets["gmail"]["to_email"]
+
+    # Normalize recipients into a clean comma-separated string whether stored as string or TOML list
+    if isinstance(raw_recipients, (list, tuple)):
+        recipient_input = ", ".join(str(addr).strip() for addr in raw_recipients if str(addr).strip())
+    else:
+        recipient_input = str(raw_recipients).strip()
+
+    secrets_loaded = bool(email_sender and app_password and recipient_input)
+except (KeyError, FileNotFoundError):
     email_sender = ""
     app_password = ""
     recipient_input = ""
     secrets_loaded = False
 
 if not secrets_loaded:
-    st.sidebar.error("⚠️ Credentials missing! Configure [gmail] entries in Streamlit Secrets.")
+    st.sidebar.error("⚠️ Credentials missing! Configure [gmail] entries (username, app_password, to_email) in Streamlit Secrets.")
 
 email_trigger = st.sidebar.button("Dispatch PDF Report", use_container_width=True, disabled=not secrets_loaded)
 
@@ -70,7 +77,6 @@ if fetch_trigger:
                 st.success(f"Live Ingestion Completed! Active base coverage: {len(processed_df)} securities.")
             except Exception as error:
                 st.error(f"Pipeline Execution Aborted: {str(error)}")
-
 # --- VISUAL CONTROL DESK: MASTER WORKSPACE ENTRY ---
 if st.session_state.market_data is not None:
     df = st.session_state.market_data.copy()
@@ -120,8 +126,8 @@ if not df.empty:
         if search_query:
             if symbol_col in df.columns and "Company Name" in df.columns:
                 filtered_df = df[
-                    df[symbol_col].str.contains(search_query, case=False) | 
-                    df["Company Name"].str.contains(search_query, case=False)
+                    df[symbol_col].astype(str).str.contains(search_query, case=False, regex=False) | 
+                    df["Company Name"].astype(str).str.contains(search_query, case=False, regex=False)
                 ]
             
         if is_live_feed and active_close_col:
@@ -194,7 +200,7 @@ if email_trigger:
     if st.session_state.market_data is None:
         st.sidebar.error("❌ Data missing! Execute live ingestion first to compile the report data.")
     else:
-        with st.spinner("Connecting to secure relays and distributing PDF reports..."):
+        with st.spinner("Connecting to secure relays and distributing individual PDF reports..."):
             try:
                 count = EnterpriseEmailService.send_report(
                     recipient_string=recipient_input,
@@ -204,6 +210,6 @@ if email_trigger:
                     subject="Automated Executive Briefing: Absolute Variance Matrix",
                     body=f"Team,\n\nPlease find attached the filtered structural tracking ledger mapping absolute rupee movements.\n\nFilters Applied:\n- Price Range: ₹{price_from:,.2f} to ₹{price_to:,.2f}\n- Target Tracking Interval: {start_date} to {end_date}"
                 )
-                st.sidebar.success(f"🚀 Filtered PDF Report successfully sent to your secure distribution list!")
+                st.sidebar.success(f"🚀 Filtered PDF Report privately dispatched to {count} recipient(s)!")
             except Exception as email_error:
                 st.sidebar.error(f"Transmission Failed: {str(email_error)}")
