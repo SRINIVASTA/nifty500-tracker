@@ -35,7 +35,7 @@ jobs:
 
       - name: Keep workflow active (commit log)
         run: |
-          git config --local user.email "github-actions[bot]@://github.com"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add pipeline_automation.log
           git diff --quiet && git diff --staged --quiet || git commit -m "chore: update automation log"
