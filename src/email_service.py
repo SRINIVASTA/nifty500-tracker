@@ -21,6 +21,7 @@ class EnterpriseEmailService:
         if not os.path.exists(attachment_path):
             raise FileNotFoundError(f"Attachment target missing: {attachment_path}")
 
+        # Parse comma-separated recipients (works with both single-line and multi-line TOML strings)
         recipient_list = [email.strip() for email in recipient_string.split(",") if email.strip()]
         if not recipient_list:
             raise ValueError("No valid recipient email addresses found.")
@@ -28,7 +29,12 @@ class EnterpriseEmailService:
         email_subject = subject or "Automated Executive Briefing: Nifty 500 Market Matrix"
         email_body = body or "Team,\n\nPlease find attached the automated tracking matrix report."
 
-        server = smtplib.SMTP("smtp.gmail.com", 587)
+        # Read the PDF attachment once into memory before looping through recipients
+        with open(attachment_path, "rb") as f:
+            pdf_bytes = f.read()
+        pdf_filename = os.path.basename(attachment_path)
+
+        server = smtplib.SMTP("://gmail.com", 587)
         try:
             server.starttls()
             server.login(sender_email, app_password)
@@ -41,10 +47,9 @@ class EnterpriseEmailService:
 
                 msg.attach(MIMEText(email_body, "plain"))
 
-                with open(attachment_path, "rb") as f:
-                    part = MIMEApplication(f.read(), Name=os.path.basename(attachment_path))
-                    part["Content-Disposition"] = f'attachment; filename="{os.path.basename(attachment_path)}"'
-                    msg.attach(part)
+                part = MIMEApplication(pdf_bytes, Name=pdf_filename)
+                part["Content-Disposition"] = f'attachment; filename="{pdf_filename}"'
+                msg.attach(part)
 
                 server.sendmail(sender_email, receiver, msg.as_string())
 
