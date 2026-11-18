@@ -1,4 +1,5 @@
 import os
+import time
 import smtplib
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
@@ -27,10 +28,9 @@ class EnterpriseEmailService:
         email_subject = subject or "Automated Executive Briefing: Nifty 500 Market Matrix"
         email_body = body or "Team,\n\nPlease find attached the automated tracking matrix report."
 
-        # Build ONE single email message for everyone
         msg = MIMEMultipart()
         msg["From"] = sender_email
-        msg["To"] = sender_email  # Everyone sees only your sender address in 'To'
+        msg["To"] = sender_email
         msg["Subject"] = email_subject
 
         msg.attach(MIMEText(email_body, "plain"))
@@ -40,13 +40,20 @@ class EnterpriseEmailService:
             part["Content-Disposition"] = f'attachment; filename="{os.path.basename(attachment_path)}"'
             msg.attach(part)
 
-        # Send the single email to all recipients via hidden BCC envelope
-        server = smtplib.SMTP("://gmail.com", 587)
-        try:
-            server.starttls()
-            server.login(sender_email, app_password)
-            server.sendmail(sender_email, recipient_list, msg.as_string())
-        finally:
-            server.quit()
+        last_error = None
+        for attempt in range(3):
+            try:
+                server = smtplib.SMTP("://gmail.com", 587, timeout=20)
+                try:
+                    server.starttls()
+                    server.login(sender_email, app_password)
+                    server.sendmail(sender_email, recipient_list, msg.as_string())
+                finally:
+                    server.quit()
+                return len(recipient_list)
+            except Exception as err:
+                last_error = err
+                if attempt < 2:
+                    time.sleep(2)
 
-        return len(recipient_list)
+        raise RuntimeError(f"SMTP dispatch failed after 3 attempts: {last_error}")
