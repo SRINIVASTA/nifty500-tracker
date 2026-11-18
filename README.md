@@ -5,6 +5,8 @@ A production-grade Streamlit terminal engineered to map daily market trends acro
 ## About
 Production-grade **Autonomous Financial Data Agent Workspace** built with **Streamlit** for **Nifty 500** constituents with automated reporting and data ingestion capabilities.
 
+If you like the UI design, dual-mode system architecture, or automated financial data engineering behind **Nifty 500 Market Performance Enterprise Workspace**, please consider giving this repository a **Star ⭐** on GitHub! It helps showcase this work and motivates future builds.
+
 
 <img src="assets/desktop.png" width="100%" alt="Desktop Preview">
 
@@ -33,32 +35,39 @@ nifty500-market-matrix/
 
 ```mermaid
 flowchart TD
-    %% Base Infrastructure Load
-    A[app.py Platform Boot] e1@-->|Step 1: On-Init Standby| B(src/data_engine.py: fetch_master_list)
+    %% Dual Entry Modes: Manual UI vs. Automated Scheduled Pipeline
+    A[app.py Manual UI Boot] e1@-->|Step 1: On-Init Standby| B(src/data_engine.py: fetch_master_list)
+    AUTO[GitHub Actions: Tue–Fri 5:00 PM IST / Manual Dispatch] e18@-->|Headless Cron Trigger| CRON(cron_job.py: Mon–Today Window)
+    CRON e19@-->|Load Master Index| B
+
+    %% Master List Data Sources
     B e2@-->|Pathway 1: Relative Disk| C{data/ind_nifty500list.csv}
     B e3@-->|Pathway 2: High-Availability Mirror| D[Raw GitHub CDN Stream]
     
-    %% Desktop Interface Rendering
-    C e4@-->|Populate Data Frame| E[📋 Master Ledger Workspace]
-    D e5@-->|Populate Data Frame| E
+    %% Manual Desktop Interface Rendering
+    C e4@-->|Populate UI Frame| E[📋 Master Ledger Workspace]
+    D e5@-->|Populate UI Frame| E
     E e6@-->|Interactive Desktop View| F[User Verification Review Phase]
     
-    %% Live Processing Ingestion Execution
-    F e7@-->|Step 2: Trigger Action| G[Execute Live Ingestion Button]
+    %% Live Processing Ingestion Execution (Both Modes)
+    F e7@-->|Step 2: Manual Trigger| G[Execute Live Ingestion Button]
     G e8@-->|Parallel Batch Pooling| H(yfinance Multi-Thread Engine)
-    H e9@-->|Download 5d Pricing Windows| I[Calculate Closes & % Deltas]
+    CRON e20@-->|Automated Batch Pooling| H
+    H e9@-->|Download Pricing Windows| I[Calculate Closes, Deltas & ₹ Filters]
     
     %% Downstream Document Output
-    I e10@-->|Step 3: Render Metrics| J[Update Grid + Activate Charts]
-    I e11@-->|Auto-Compile Binaries| K(src/pdf_generator.py)
-    K e12@-->|Build Landscape Multi-Page Ledger| L[Nifty500_Master_Report.pdf]
+    I e10@-->|Step 3: Render UI Metrics| J[Update Grid + Activate Charts]
+    I e11@-->|Compile PDF Ledger| K(src/pdf_generator.py)
+    K e12@-->|Build Multi-Page Report| L[Nifty500_Filtered / Automated_Report.pdf]
     
-    %% Secure Transmission Route
-    J e13@-->|Step 4: Silent Dispatch| M[Dispatch PDF Report Button]
-    L e14@-->|Step 4: Silent Dispatch| M
-    M e15@-->|Extract Context via TOML Secrets| N{st.secrets gmail}
-    N e16@-->|Route Secure TLS Packet| O(src/email_service.py)
-    O e17@-->|Target Server: smtp.gmail.com| P["********@gmail.com"]
+    %% Secure Single-Dispatch BCC Transmission Route
+    J e13@-->|Step 4: Manual Dispatch| M[Dispatch PDF Report Button]
+    L e14@-->|Attach Report Payload| M
+    L e21@-->|Automated Headless Dispatch| O(src/email_service.py: Single BCC)
+    M e15@-->|Read TOML Secrets| N{st.secrets gmail}
+    N e16@-->|Route Secure TLS Packet| O
+    CRON e22@-->|Read GitHub Secrets| O
+    O e17@-->|Port 587 TLS: Single Email to All BCC| P["From/To: Sender | Hidden BCC: 1–100 Recipients"]
 
     %% Running Flow Animation Definitions
     e1@{ animate: true }
@@ -78,8 +87,15 @@ flowchart TD
     e15@{ animate: true }
     e16@{ animate: true }
     e17@{ animate: true }
+    e18@{ animate: true }
+    e19@{ animate: true }
+    e20@{ animate: true }
+    e21@{ animate: true }
+    e22@{ animate: true }
 
     %% Class Styling for Clean UI Nodes
+    style AUTO fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+    style CRON fill:#ede7f6,stroke:#512da8,stroke-width:2px;
     style E fill:#e1f5fe,stroke:#03a9f4,stroke-width:2px;
     style F fill:#fff9c4,stroke:#fbc02d,stroke-width:2px;
     style L fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
