@@ -2,8 +2,14 @@
 import os
 import sys
 import logging
-from datetime import date, timedelta
+from datetime import datetime, date, timedelta
 from pathlib import Path
+
+def get_ist_now() -> datetime:
+    """Returns the current datetime explicitly converted to Indian Standard Time (IST)."""
+    # GitHub runners always execute on UTC system clocks. 
+    # Adding 5 hours and 30 minutes aligns calculations cleanly to Indian market timelines.
+    return datetime.utcnow() + timedelta(hours=5, minutes=30)
 
 ROOT_DIR = Path(__file__).resolve().parent
 if str(ROOT_DIR) not in sys.path:
@@ -45,9 +51,13 @@ def _load_smtp_credentials() -> tuple[str, str, str]:
     return sender.strip(), password.strip(), recipients.strip()
 
 def _get_weekly_dates() -> tuple[date, date]:
-    """Anchor start_date to Monday of the current week and advance end_date daily through Friday."""
-    end_date = date.today()
+    """Anchor start_date to Monday of the current week based on Indian Standard Time."""
+    # Bug Fix: Calculate today relative to Indian market timezone, not the runner's server clock
+    ist_today = get_ist_now().date()
+    
+    end_date = ist_today
     start_date = end_date - timedelta(days=end_date.weekday())
+    
     if end_date.weekday() == 0:
         start_date = end_date - timedelta(days=7)
     return start_date, end_date
