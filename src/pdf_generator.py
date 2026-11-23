@@ -203,7 +203,7 @@ class NiftyPDFGenerator:
                     val = "N/A"
                     c_style = cell_style
                 else:
-                    val = str(row[original_col])
+                    val = html.unescape(str(row[original_col]))
                     c_style = cell_style
 
                     if original_col == "Price Change":
