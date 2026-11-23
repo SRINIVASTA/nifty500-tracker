@@ -1,7 +1,9 @@
+from datetime import datetime
+import html
 import io
 import os
-import html
 from xml.sax.saxutils import escape
+from zoneinfo import ZoneInfo
 import pandas as pd
 from PIL import Image, ImageChops
 from reportlab.lib import colors
@@ -11,6 +13,9 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+
+IST_TZ = ZoneInfo("Asia/Kolkata")
 
 
 def _register_unicode_fonts() -> tuple[str, str]:
@@ -64,88 +69,106 @@ def _get_cropped_logo(logo_path: str) -> ImageReader | None:
 CROPPED_LOGO = _get_cropped_logo(LOGO_PATH)
 
 
-def _draw_letterhead(canvas, doc):
-    """Draw Tanakala AI Solutions Logo, Header, and Footer on every page."""
-    canvas.saveState()
-    page_width, page_height = portrait(letter)
-    left_x = doc.leftMargin
-    right_x = page_width - doc.rightMargin
+def _make_letterhead_callback(generated_at_ist: str):
+    """Return a page callback embedding the exact IST generation timestamp."""
 
-    # --- HEADER ---
-    top_y = page_height - 32
-    text_start_x = left_x
+    def _draw_letterhead(canvas, doc):
+        """Draw Tanakala AI Solutions Logo, Header, and Footer on every page."""
+        canvas.saveState()
+        page_width, page_height = portrait(letter)
+        left_x = doc.leftMargin
+        right_x = page_width - doc.rightMargin
 
-    # Match the exact vertical span of the 3 text lines (~38 points tall)
-    if CROPPED_LOGO is not None:
-        logo_height = 38
-        orig_w, orig_h = CROPPED_LOGO.getSize()
-        logo_width = logo_height * (orig_w / orig_h)
-        canvas.drawImage(
-            CROPPED_LOGO,
+        # --- HEADER ---
+        top_y = page_height - 32
+        text_start_x = left_x
+
+        if CROPPED_LOGO is not None:
+            logo_height = 38
+            orig_w, orig_h = CROPPED_LOGO.getSize()
+            logo_width = logo_height * (orig_w / orig_h)
+            canvas.drawImage(
+                CROPPED_LOGO,
+                left_x,
+                top_y - 26,
+                width=logo_width,
+                height=logo_height,
+                preserveAspectRatio=True,
+                mask="auto",
+            )
+            text_start_x = left_x + logo_width + 10
+
+        canvas.setFont(BOLD_FONT, 14)
+        canvas.setFillColor(colors.HexColor("#1A2B4C"))
+        canvas.drawString(text_start_x, top_y, "TANAKALA AI SOLUTIONS")
+
+        canvas.setFont(REGULAR_FONT, 8.5)
+        canvas.setFillColor(colors.HexColor("#4A5568"))
+        canvas.drawString(text_start_x, top_y - 13, "Custom AI & Tailor-Made Application Development")
+        canvas.drawString(text_start_x, top_y - 24, "Visakhapatnam, Andhra Pradesh, India")
+
+        # Right-aligned Contact Info + IST Timestamp
+        canvas.setFont(REGULAR_FONT, 8.5)
+        canvas.setFillColor(colors.HexColor("#333333"))
+        canvas.drawRightString(right_x, top_y, "Email: tasrinivass@gmail.com")
+        canvas.drawRightString(right_x, top_y - 12, "Phone: +91-8897415303")
+
+        canvas.setFont(REGULAR_FONT, 7.5)
+        canvas.setFillColor(colors.HexColor("#4A5568"))
+        canvas.drawRightString(right_x, top_y - 24, f"Generated: {generated_at_ist}")
+
+        # Header Divider Line
+        canvas.setStrokeColor(colors.HexColor("#1A2B4C"))
+        canvas.setLineWidth(1.2)
+        canvas.line(left_x, top_y - 32, right_x, top_y - 32)
+
+        # --- FOOTER ---
+        bottom_y = 38
+        canvas.setStrokeColor(colors.HexColor("#CBD5E0"))
+        canvas.setLineWidth(0.8)
+        canvas.line(left_x, bottom_y + 18, right_x, bottom_y + 18)
+
+        canvas.setFont(BOLD_FONT, 8)
+        canvas.setFillColor(colors.HexColor("#1A2B4C"))
+        canvas.drawString(left_x, bottom_y + 7, "TANAKALA AI SOLUTIONS")
+
+        canvas.setFont(REGULAR_FONT, 7.5)
+        canvas.setFillColor(colors.HexColor("#4A5568"))
+        canvas.drawString(
             left_x,
-            top_y - 26,
-            width=logo_width,
-            height=logo_height,
-            preserveAspectRatio=True,
-            mask="auto",
+            bottom_y - 4,
+            "Specializing in Web Apps • Mobile Apps • AI Automation • Custom Software",
         )
-        text_start_x = left_x + logo_width + 10
+        canvas.drawString(
+            left_x,
+            bottom_y - 14,
+            "tasrinivass@gmail.com | +91-8897415303 | Visakhapatnam, India",
+        )
 
-    canvas.setFont(BOLD_FONT, 14)
-    canvas.setFillColor(colors.HexColor("#1A2B4C"))
-    canvas.drawString(text_start_x, top_y, "TANAKALA AI SOLUTIONS")
+        # Page Number on Bottom Right
+        canvas.setFont(REGULAR_FONT, 8)
+        canvas.drawRightString(right_x, bottom_y - 4, f"Page {doc.page}")
 
-    canvas.setFont(REGULAR_FONT, 8.5)
-    canvas.setFillColor(colors.HexColor("#4A5568"))
-    canvas.drawString(text_start_x, top_y - 13, "Custom AI & Tailor-Made Application Development")
-    canvas.drawString(text_start_x, top_y - 24, "Visakhapatnam, Andhra Pradesh, India")
+        canvas.restoreState()
 
-    # Right-aligned Contact Info
-    canvas.setFont(REGULAR_FONT, 8.5)
-    canvas.setFillColor(colors.HexColor("#333333"))
-    canvas.drawRightString(right_x, top_y - 2, "Email: tasrinivass@gmail.com")
-    canvas.drawRightString(right_x, top_y - 14, "Phone: +91-8897415303")
-
-    # Header Divider Line
-    canvas.setStrokeColor(colors.HexColor("#1A2B4C"))
-    canvas.setLineWidth(1.2)
-    canvas.line(left_x, top_y - 32, right_x, top_y - 32)
-
-    # --- FOOTER ---
-    bottom_y = 38
-    canvas.setStrokeColor(colors.HexColor("#CBD5E0"))
-    canvas.setLineWidth(0.8)
-    canvas.line(left_x, bottom_y + 18, right_x, bottom_y + 18)
-
-    canvas.setFont(BOLD_FONT, 8)
-    canvas.setFillColor(colors.HexColor("#1A2B4C"))
-    canvas.drawString(left_x, bottom_y + 7, "TANAKALA AI SOLUTIONS")
-
-    canvas.setFont(REGULAR_FONT, 7.5)
-    canvas.setFillColor(colors.HexColor("#4A5568"))
-    canvas.drawString(
-        left_x,
-        bottom_y - 4,
-        "Specializing in Web Apps • Mobile Apps • AI Automation • Custom Software",
-    )
-    canvas.drawString(
-        left_x,
-        bottom_y - 14,
-        "tasrinivass@gmail.com | +91-8897415303 | Visakhapatnam, India",
-    )
-
-    # Page Number on Bottom Right
-    canvas.setFont(REGULAR_FONT, 8)
-    canvas.drawRightString(right_x, bottom_y - 4, f"Page {doc.page}")
-
-    canvas.restoreState()
+    return _draw_letterhead
 
 
 class NiftyPDFGenerator:
     """Production ReportLab engine generating highly formatted accounting ledgers."""
 
     @staticmethod
+    def get_ist_filename(prefix: str = "Nifty500_Ledger") -> str:
+        """Return a clean filename stamped with current IST date & time."""
+        now_ist = datetime.now(IST_TZ)
+        return f"{prefix}_{now_ist.strftime('%Y%m%d_%H%M')}_IST.pdf"
+
+    @staticmethod
     def generate(df: pd.DataFrame, output_path: str):
+        now_ist = datetime.now(IST_TZ)
+        generated_at_ist = now_ist.strftime("%d %b %Y, %I:%M %p IST")
+        letterhead_fn = _make_letterhead_callback(generated_at_ist)
+
         doc = SimpleDocTemplate(
             output_path,
             pagesize=portrait(letter),
@@ -256,4 +279,4 @@ class NiftyPDFGenerator:
         )
 
         elements.append(perf_table)
-        doc.build(elements, onFirstPage=_draw_letterhead, onLaterPages=_draw_letterhead)
+        doc.build(elements, onFirstPage=letterhead_fn, onLaterPages=letterhead_fn)
