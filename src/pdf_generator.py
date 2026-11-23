@@ -35,9 +35,13 @@ def _register_unicode_fonts() -> tuple[str, str]:
 
 REGULAR_FONT, BOLD_FONT = _register_unicode_fonts()
 
+# Resolve path relative to this script's directory so it works reliably on Streamlit Cloud & locally
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOGO_PATH = os.path.join(BASE_DIR, "assets", "logo.png")
+
 
 def _draw_letterhead(canvas, doc):
-    """Draw Tanakala AI Solutions Header and Footer on every page."""
+    """Draw Tanakala AI Solutions Logo, Header, and Footer on every page."""
     canvas.saveState()
     page_width, page_height = portrait(letter)
     left_x = doc.leftMargin
@@ -45,14 +49,31 @@ def _draw_letterhead(canvas, doc):
 
     # --- HEADER ---
     top_y = page_height - 32
+    text_start_x = left_x
+
+    # Draw logo if assets/logo.png exists
+    if os.path.exists(LOGO_PATH):
+        logo_size = 36
+        # Align top of logo with top of the header text
+        canvas.drawImage(
+            LOGO_PATH,
+            left_x,
+            top_y - 26,
+            width=logo_size,
+            height=logo_size,
+            preserveAspectRatio=True,
+            mask="auto",
+        )
+        text_start_x = left_x + logo_size + 10
+
     canvas.setFont(BOLD_FONT, 14)
     canvas.setFillColor(colors.HexColor("#1A2B4C"))
-    canvas.drawString(left_x, top_y, "TANAKALA AI SOLUTIONS")
+    canvas.drawString(text_start_x, top_y, "TANAKALA AI SOLUTIONS")
 
     canvas.setFont(REGULAR_FONT, 8.5)
     canvas.setFillColor(colors.HexColor("#4A5568"))
-    canvas.drawString(left_x, top_y - 13, "Custom AI & Tailor-Made Application Development")
-    canvas.drawString(left_x, top_y - 24, "Visakhapatnam, Andhra Pradesh, India")
+    canvas.drawString(text_start_x, top_y - 13, "Custom AI & Tailor-Made Application Development")
+    canvas.drawString(text_start_x, top_y - 24, "Visakhapatnam, Andhra Pradesh, India")
 
     # Right-aligned Contact Info
     canvas.setFont(REGULAR_FONT, 8.5)
@@ -100,7 +121,6 @@ class NiftyPDFGenerator:
 
     @staticmethod
     def generate(df: pd.DataFrame, output_path: str):
-        # Adjusted topMargin (80) and bottomMargin (68) to accommodate the letterhead
         doc = SimpleDocTemplate(
             output_path,
             pagesize=portrait(letter),
@@ -192,7 +212,7 @@ class NiftyPDFGenerator:
             table_data.append(row_data)
 
         # Exact grid width mapping matching Portrait bounds (Summing to 552 points)
-        col_widths = [90, 175, 120, 97, 70]
+        col_widths =
 
         perf_table = Table(table_data, colWidths=col_widths, repeatRows=1)
         perf_table.setStyle(
