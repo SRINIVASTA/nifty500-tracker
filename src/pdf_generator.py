@@ -36,18 +36,78 @@ def _register_unicode_fonts() -> tuple[str, str]:
 REGULAR_FONT, BOLD_FONT = _register_unicode_fonts()
 
 
+def _draw_letterhead(canvas, doc):
+    """Draw Tanakala AI Solutions Header and Footer on every page."""
+    canvas.saveState()
+    page_width, page_height = portrait(letter)
+    left_x = doc.leftMargin
+    right_x = page_width - doc.rightMargin
+
+    # --- HEADER ---
+    top_y = page_height - 32
+    canvas.setFont(BOLD_FONT, 14)
+    canvas.setFillColor(colors.HexColor("#1A2B4C"))
+    canvas.drawString(left_x, top_y, "TANAKALA AI SOLUTIONS")
+
+    canvas.setFont(REGULAR_FONT, 8.5)
+    canvas.setFillColor(colors.HexColor("#4A5568"))
+    canvas.drawString(left_x, top_y - 13, "Custom AI & Tailor-Made Application Development")
+    canvas.drawString(left_x, top_y - 24, "Visakhapatnam, Andhra Pradesh, India")
+
+    # Right-aligned Contact Info
+    canvas.setFont(REGULAR_FONT, 8.5)
+    canvas.setFillColor(colors.HexColor("#333333"))
+    canvas.drawRightString(right_x, top_y - 2, "Email: tasrinivass@gmail.com")
+    canvas.drawRightString(right_x, top_y - 14, "Phone: +91-8897415303")
+
+    # Header Divider Line
+    canvas.setStrokeColor(colors.HexColor("#1A2B4C"))
+    canvas.setLineWidth(1.2)
+    canvas.line(left_x, top_y - 32, right_x, top_y - 32)
+
+    # --- FOOTER ---
+    bottom_y = 38
+    canvas.setStrokeColor(colors.HexColor("#CBD5E0"))
+    canvas.setLineWidth(0.8)
+    canvas.line(left_x, bottom_y + 18, right_x, bottom_y + 18)
+
+    canvas.setFont(BOLD_FONT, 8)
+    canvas.setFillColor(colors.HexColor("#1A2B4C"))
+    canvas.drawString(left_x, bottom_y + 7, "TANAKALA AI SOLUTIONS")
+
+    canvas.setFont(REGULAR_FONT, 7.5)
+    canvas.setFillColor(colors.HexColor("#4A5568"))
+    canvas.drawString(
+        left_x,
+        bottom_y - 4,
+        "Specializing in Web Apps • Mobile Apps • AI Automation • Custom Software",
+    )
+    canvas.drawString(
+        left_x,
+        bottom_y - 14,
+        "tasrinivass@gmail.com | +91-8897415303 | Visakhapatnam, India",
+    )
+
+    # Page Number on Bottom Right
+    canvas.setFont(REGULAR_FONT, 8)
+    canvas.drawRightString(right_x, bottom_y - 4, f"Page {doc.page}")
+
+    canvas.restoreState()
+
+
 class NiftyPDFGenerator:
     """Production ReportLab engine generating highly formatted accounting ledgers."""
 
     @staticmethod
     def generate(df: pd.DataFrame, output_path: str):
+        # Adjusted topMargin (80) and bottomMargin (68) to accommodate the letterhead
         doc = SimpleDocTemplate(
             output_path,
             pagesize=portrait(letter),
             rightMargin=30,
             leftMargin=30,
-            topMargin=40,
-            bottomMargin=40,
+            topMargin=80,
+            bottomMargin=68,
         )
 
         styles = getSampleStyleSheet()
@@ -55,10 +115,10 @@ class NiftyPDFGenerator:
             "DocTitle",
             parent=styles["Heading1"],
             fontName=BOLD_FONT,
-            fontSize=15,
-            leading=20,
+            fontSize=14,
+            leading=18,
             textColor=colors.HexColor("#1A2B4C"),
-            spaceAfter=15,
+            spaceAfter=10,
         )
         cell_style = ParagraphStyle(
             "TableCell",
@@ -79,7 +139,7 @@ class NiftyPDFGenerator:
 
         elements = [
             Paragraph("Filtered Nifty 500 Market Performance Ledger", title_style),
-            Spacer(1, 10),
+            Spacer(1, 6),
         ]
 
         yesterday_col = [c for c in df.columns if "Close (" in c]
@@ -150,4 +210,4 @@ class NiftyPDFGenerator:
         )
 
         elements.append(perf_table)
-        doc.build(elements)
+        doc.build(elements, onFirstPage=_draw_letterhead, onLaterPages=_draw_letterhead)
