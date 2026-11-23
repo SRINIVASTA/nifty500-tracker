@@ -1,5 +1,6 @@
 import io
 import os
+import html
 import pandas as pd
 from PIL import Image, ImageChops
 from reportlab.lib import colors
