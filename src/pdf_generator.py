@@ -1,8 +1,11 @@
+import io
 import os
 import pandas as pd
+from PIL import Image, ImageChops
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, portrait
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
@@ -40,6 +43,25 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOGO_PATH = os.path.join(ROOT_DIR, "assets", "logo.png")
 
 
+def _get_cropped_logo(logo_path: str) -> ImageReader | None:
+    """Auto-trim surrounding whitespace so the 'T' mark fills the full 3-line header height."""
+    if not os.path.exists(logo_path):
+        return None
+    img = Image.open(logo_path).convert("RGBA")
+    bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
+    diff = ImageChops.difference(img.convert("RGB"), bg.convert("RGB"))
+    bbox = diff.getbbox()
+    if bbox:
+        img = img.crop(bbox)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return ImageReader(buf)
+
+
+CROPPED_LOGO = _get_cropped_logo(LOGO_PATH)
+
+
 def _draw_letterhead(canvas, doc):
     """Draw Tanakala AI Solutions Logo, Header, and Footer on every page."""
     canvas.saveState()
@@ -51,19 +73,21 @@ def _draw_letterhead(canvas, doc):
     top_y = page_height - 32
     text_start_x = left_x
 
-    # Draw logo if assets/logo.png exists
-    if os.path.exists(LOGO_PATH):
-        logo_size = 36
+    # Match the exact vertical span of the 3 text lines (~38 points tall)
+    if CROPPED_LOGO is not None:
+        logo_height = 38
+        orig_w, orig_h = CROPPED_LOGO.getSize()
+        logo_width = logo_height * (orig_w / orig_h)
         canvas.drawImage(
-            LOGO_PATH,
+            CROPPED_LOGO,
             left_x,
             top_y - 26,
-            width=logo_size,
-            height=logo_size,
+            width=logo_width,
+            height=logo_height,
             preserveAspectRatio=True,
             mask="auto",
         )
-        text_start_x = left_x + logo_size + 10
+        text_start_x = left_x + logo_width + 10
 
     canvas.setFont(BOLD_FONT, 14)
     canvas.setFillColor(colors.HexColor("#1A2B4C"))
@@ -211,7 +235,7 @@ class NiftyPDFGenerator:
             table_data.append(row_data)
 
         # Exact grid width mapping matching Portrait bounds (Summing to 552 points)
-        col_widths = [90, 175, 120, 97, 70]
+        col_widths =
 
         perf_table = Table(table_data, colWidths=col_widths, repeatRows=1)
         perf_table.setStyle(
