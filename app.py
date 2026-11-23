@@ -17,7 +17,7 @@ engine = NiftyDataEngine()
 if "market_data" not in st.session_state:
     st.session_state.market_data = None
 if "last_generated_pdf" not in st.session_state:
-    st.session_state.last_generated_pdf = "Nifty500_Filtered_Report.pdf"
+    st.session_state.last_generated_pdf = NiftyPDFGenerator.get_ist_filename("Nifty500_Filtered_Performance")
 
 st.title("📊 Nifty 500 Market Performance Enterprise Workspace")
 st.markdown("Automated ingestion pipeline mapping tracking deltas with interactive absolute price variance analysis dashboards.")
@@ -112,6 +112,14 @@ if not df.empty:
         kpi2.metric(label="Declining Markets (🔴)", value=down_scrip)
         kpi3.metric(label="Index Price Delta Mean", value=f"₹{avg_shift:+.2f}")
         
+        # Clean up previous temporary PDF if filename changed, then generate fresh IST-stamped PDF
+        new_pdf_path = NiftyPDFGenerator.get_ist_filename("Nifty500_Filtered_Performance")
+        if st.session_state.last_generated_pdf != new_pdf_path and os.path.exists(st.session_state.last_generated_pdf):
+            try:
+                os.remove(st.session_state.last_generated_pdf)
+            except OSError:
+                pass
+        st.session_state.last_generated_pdf = new_pdf_path
         NiftyPDFGenerator.generate(df, st.session_state.last_generated_pdf)
     else:
         st.warning("⚠️ Hub Pipeline Standby: Displaying structural index tracking registry. Live metrics will map below after running execution pipeline.")
@@ -167,7 +175,7 @@ if not df.empty:
                 st.download_button(
                     label="📥 Download Executable PDF Ledger",
                     data=file_bytes,
-                    file_name="Nifty500_Filtered_Performance.pdf",
+                    file_name=os.path.basename(st.session_state.last_generated_pdf),
                     mime="application/pdf"
                 )
                 
