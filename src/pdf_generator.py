@@ -1,6 +1,7 @@
 import io
 import os
 import html
+from xml.sax.saxutils import escape
 import pandas as pd
 from PIL import Image, ImageChops
 from reportlab.lib import colors
@@ -204,7 +205,8 @@ class NiftyPDFGenerator:
                     val = "N/A"
                     c_style = cell_style
                 else:
-                    val = html.unescape(str(row[original_col]))
+                    clean_text = html.unescape(str(row[original_col])).rstrip(";")
+                    val = escape(clean_text)
                     c_style = cell_style
 
                     if original_col == "Price Change":
