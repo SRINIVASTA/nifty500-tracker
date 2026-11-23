@@ -35,9 +35,9 @@ def _register_unicode_fonts() -> tuple[str, str]:
 
 REGULAR_FONT, BOLD_FONT = _register_unicode_fonts()
 
-# Resolve path relative to this script's directory so it works reliably on Streamlit Cloud & locally
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOGO_PATH = os.path.join(BASE_DIR, "assets", "logo.png")
+# Resolve project root directory (one level up from src/)
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOGO_PATH = os.path.join(ROOT_DIR, "assets", "logo.png")
 
 
 def _draw_letterhead(canvas, doc):
@@ -54,7 +54,6 @@ def _draw_letterhead(canvas, doc):
     # Draw logo if assets/logo.png exists
     if os.path.exists(LOGO_PATH):
         logo_size = 36
-        # Align top of logo with top of the header text
         canvas.drawImage(
             LOGO_PATH,
             left_x,
@@ -212,7 +211,7 @@ class NiftyPDFGenerator:
             table_data.append(row_data)
 
         # Exact grid width mapping matching Portrait bounds (Summing to 552 points)
-        col_widths =
+        col_widths = [90, 175, 120, 97, 70]
 
         perf_table = Table(table_data, colWidths=col_widths, repeatRows=1)
         perf_table.setStyle(
