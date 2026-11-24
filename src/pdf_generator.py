@@ -13,9 +13,34 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+import streamlit as st
 
 
 IST_TZ = ZoneInfo("Asia/Kolkata")
+
+
+def _get_letterhead_config() -> dict:
+    """Retrieve header/footer details from st.secrets with safe fallbacks."""
+    header = st.secrets.get("header", {})
+    footer = st.secrets.get("footer", {})
+
+    username = header.get("username", "tasrinivass@gmail.com")
+    phone = header.get("phone", "+91-8897415303")
+    footer_location = footer.get("location", "Visakhapatnam, India")
+
+    return {
+        "header_company": header.get("company_name", "TANAKALA AI SOLUTIONS"),
+        "header_tagline": header.get("tagline", "Custom AI & Tailor-Made Application Development"),
+        "header_address": header.get("address", "Visakhapatnam, Andhra Pradesh, India"),
+        "username": username,
+        "phone": phone,
+        "footer_company": footer.get("company_name", "TANAKALA AI SOLUTIONS"),
+        "footer_services": footer.get(
+            "services",
+            "Specializing in Web Apps • Mobile Apps • AI Automation • Custom Software",
+        ),
+        "footer_contact": f"{username} | {phone} | {footer_location}",
+    }
 
 
 def _register_unicode_fonts() -> tuple[str, str]:
@@ -70,10 +95,11 @@ CROPPED_LOGO = _get_cropped_logo(LOGO_PATH)
 
 
 def _make_letterhead_callback(generated_at_ist: str):
-    """Return a page callback embedding the exact IST generation timestamp."""
+    """Return a page callback embedding the exact IST generation timestamp and secrets."""
+    cfg = _get_letterhead_config()
 
     def _draw_letterhead(canvas, doc):
-        """Draw Tanakala AI Solutions Logo, Header, and Footer on every page."""
+        """Draw Logo, Header, and Footer from st.secrets on every page."""
         canvas.saveState()
         page_width, page_height = portrait(letter)
         left_x = doc.leftMargin
@@ -100,18 +126,18 @@ def _make_letterhead_callback(generated_at_ist: str):
 
         canvas.setFont(BOLD_FONT, 14)
         canvas.setFillColor(colors.HexColor("#1A2B4C"))
-        canvas.drawString(text_start_x, top_y, "TANAKALA AI SOLUTIONS")
+        canvas.drawString(text_start_x, top_y, cfg["header_company"])
 
         canvas.setFont(REGULAR_FONT, 8.5)
         canvas.setFillColor(colors.HexColor("#4A5568"))
-        canvas.drawString(text_start_x, top_y - 13, "Custom AI & Tailor-Made Application Development")
-        canvas.drawString(text_start_x, top_y - 24, "Visakhapatnam, Andhra Pradesh, India")
+        canvas.drawString(text_start_x, top_y - 13, cfg["header_tagline"])
+        canvas.drawString(text_start_x, top_y - 24, cfg["header_address"])
 
         # Right-aligned Contact Info + IST Timestamp
         canvas.setFont(REGULAR_FONT, 8.5)
         canvas.setFillColor(colors.HexColor("#333333"))
-        canvas.drawRightString(right_x, top_y, "Email: tasrinivass@gmail.com")
-        canvas.drawRightString(right_x, top_y - 12, "Phone: +91-8897415303")
+        canvas.drawRightString(right_x, top_y, f"Email: {cfg['username']}")
+        canvas.drawRightString(right_x, top_y - 12, f"Phone: {cfg['phone']}")
 
         canvas.setFont(REGULAR_FONT, 7.5)
         canvas.setFillColor(colors.HexColor("#4A5568"))
@@ -130,20 +156,12 @@ def _make_letterhead_callback(generated_at_ist: str):
 
         canvas.setFont(BOLD_FONT, 8)
         canvas.setFillColor(colors.HexColor("#1A2B4C"))
-        canvas.drawString(left_x, bottom_y + 7, "TANAKALA AI SOLUTIONS")
+        canvas.drawString(left_x, bottom_y + 7, cfg["footer_company"])
 
         canvas.setFont(REGULAR_FONT, 7.5)
         canvas.setFillColor(colors.HexColor("#4A5568"))
-        canvas.drawString(
-            left_x,
-            bottom_y - 4,
-            "Specializing in Web Apps • Mobile Apps • AI Automation • Custom Software",
-        )
-        canvas.drawString(
-            left_x,
-            bottom_y - 14,
-            "tasrinivass@gmail.com | +91-8897415303 | Visakhapatnam, India",
-        )
+        canvas.drawString(left_x, bottom_y - 4, cfg["footer_services"])
+        canvas.drawString(left_x, bottom_y - 14, cfg["footer_contact"])
 
         # Page Number on Bottom Right
         canvas.setFont(REGULAR_FONT, 8)
