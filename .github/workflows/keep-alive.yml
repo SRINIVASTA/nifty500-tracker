@@ -1,0 +1,66 @@
+name: Keep Streamlit App Awake
+
+on:
+  schedule:
+    - cron: '0 */8 * * *'
+  workflow_dispatch:
+
+jobs:
+  wake-streamlit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install Playwright & Browsers
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install chromium --with-deps
+          
+      - name: Execute Stealth Wake Script
+        env:
+          STREAMLIT_URL: ${{ secrets.STREAMLIT_APP_URL }}
+        run: |
+          node -e '
+            const { chromium } = require("playwright");
+            (async () => {
+              const browser = await chromium.launch({ 
+                headless: true,
+                args: ["--disable-blink-features=AutomationControlled"] 
+              });
+              
+              const context = await browser.newContext({
+                userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+              });
+              
+              const page = await context.newPage();
+              
+              try {
+                console.log("Navigating to secure endpoint...");
+                // Bypassed networkidle block, increased cold start buffer to 2 minutes
+                await page.goto(process.env.STREAMLIT_URL, { waitUntil: "domcontentloaded", timeout: 120000 });
+                await page.waitForTimeout(5000);
+
+                const wakeBtn = page.getByRole("button", { name: /(get this app back up|wake up)/i });
+                if (await wakeBtn.isVisible()) {
+                  console.log("App state: Sleeping. Dispatched wake-up click event...");
+                  await wakeBtn.click();
+                  await page.waitForTimeout(20000);
+                  console.log("App signaling successfully restored.");
+                } else {
+                  console.log("App state: Already active or protected by verification wall.");
+                }
+              } catch (error) {
+                console.error("Execution layer error:", error.message);
+                process.exit(1);
+              } finally {
+                await browser.close();
+              }
+            })();
+          '
